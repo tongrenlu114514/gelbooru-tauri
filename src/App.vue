@@ -20,7 +20,7 @@ const theme = computed(() => settingsStore.theme === 'dark' ? darkTheme : null)
 
 <template>
   <n-config-provider :theme="theme" :theme-overrides="themeOverrides">
-    <n-notification-provider>
+    <n-notification-provider :max="100" :container-style="{ zIndex: 10000 }">
       <n-message-provider>
         <download-notifier />
         <n-layout has-sider style="height: 100vh">

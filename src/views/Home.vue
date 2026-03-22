@@ -24,6 +24,7 @@ const downloadStore = useDownloadStore()
 const message = useMessage()
 
 const searchInput = ref('')
+const isRestoring = ref(false)
 const selectedTags = ref<string[]>([])
 const loading = ref(false)
 
@@ -300,13 +301,19 @@ onMounted(() => {
   // 尝试恢复页面状态
   const savedState = galleryStore.restorePageState()
   if (savedState) {
+    isRestoring.value = true
     selectedTags.value = savedState.selectedTags
     selectedRating.value = savedState.selectedRating
-    galleryStore.currentPage = savedState.currentPage
     galleryStore.setPosts(savedState.posts)
     galleryStore.setTags(savedState.tags)
     galleryStore.setTotalPages(savedState.totalPages)
     galleryStore.setSearchTags(savedState.searchTags)
+    // 必须在 setSearchTags 之后设置，否则会被重置为1
+    galleryStore.currentPage = savedState.currentPage
+    // 使用 setTimeout 确保 watch 回调先执行
+    setTimeout(() => {
+      isRestoring.value = false
+    }, 0)
     console.log('[Home] Restored page state')
   } else {
     // 没有保存的状态，执行初始搜索
@@ -321,10 +328,11 @@ onBeforeRouteLeave(() => {
 })
 
 watch([selectedTags, selectedRating], () => {
-  if (!loading.value) {
-    searchPosts(true)
+  if (isRestoring.value || loading.value) {
+    return
   }
-}, { deep: true })
+  searchPosts(true)
+}, { deep: true, flush: 'sync' })
 </script>
 
 <template>

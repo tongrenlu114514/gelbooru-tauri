@@ -43,7 +43,6 @@ export const useGalleryStore = defineStore('gallery', () => {
   
   function setSearchTags(tags: string[]) {
     searchTags.value = tags
-    currentPage.value = 1
   }
   
   function nextPage() {

@@ -15,11 +15,12 @@ impl GelbooruScraper {
         Self
     }
     
-    pub fn parse_page(&self, html: &str) -> (Vec<GelbooruPost>, Vec<GelbooruTag>) {
+    pub fn parse_page(&self, html: &str) -> (Vec<GelbooruPost>, Vec<GelbooruTag>, u32) {
         let document = Html::parse_document(html);
         let posts = self.parse_post_list(&document);
         let tags = self.parse_tag_list(&document);
-        (posts, tags)
+        let total_pages = self.parse_pagination(&document);
+        (posts, tags, total_pages)
     }
     
     pub fn parse_post(&self, html: &str) -> Option<(Vec<GelbooruTag>, GelbooruPostStatistics)> {
@@ -27,6 +28,88 @@ impl GelbooruScraper {
         let tags = self.parse_tag_list(&document);
         let stats = self.parse_post_statistics(&document)?;
         Some((tags, stats))
+    }
+    
+    fn parse_pagination(&self, document: &Html) -> u32 {
+        let mut max_page = 1u32;
+        
+        // Gelbooru 分页结构分析：
+        // 分页链接通常包含 pid 参数，pid = (page - 1) * 42
+        
+        // 方法1: 查找所有包含 pid 参数的链接，取最大值
+        if let Ok(a_selector) = Selector::parse("a") {
+            for a in document.select(&a_selector) {
+                if let Some(href) = a.value().attr("href") {
+                    // 检查链接是否包含 pid 参数
+                    if href.contains("pid=") {
+                        if let Some(pid_str) = href.split("pid=").nth(1) {
+                            if let Ok(pid) = pid_str.split('&').next().unwrap_or("0").parse::<u32>() {
+                                let page = pid / PAGE_SIZE + 1;
+                                if page > max_page {
+                                    max_page = page;
+                                    println!("[DEBUG] Found page {} from pid {} in href: {}", page, pid, href);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // 方法2: 查找特定的分页区域（Gelbooru 可能用不同的类名）
+        let pagination_selectors = [".pagination", "#paginator", ".paginator", "nav.pagination"];
+        for selector_str in &pagination_selectors {
+            if let Ok(pagination_selector) = Selector::parse(selector_str) {
+                if let Some(pagination) = document.select(&pagination_selector).next() {
+                    println!("[DEBUG] Found pagination container: {}", selector_str);
+                    if let Ok(a_selector) = Selector::parse("a") {
+                        for a in pagination.select(&a_selector) {
+                            if let Some(href) = a.value().attr("href") {
+                                let text = a.text().collect::<String>();
+                                println!("[DEBUG] Pagination link: {} -> {}", text, href);
+                                if href.contains("pid=") {
+                                    if let Some(pid_str) = href.split("pid=").nth(1) {
+                                        if let Ok(pid) = pid_str.split('&').next().unwrap_or("0").parse::<u32>() {
+                                            let page = pid / PAGE_SIZE + 1;
+                                            if page > max_page {
+                                                max_page = page;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // 方法3: 查找 "next" 或数字页码链接
+        if let Ok(a_selector) = Selector::parse("a") {
+            for a in document.select(&a_selector) {
+                let text = a.text().collect::<String>().trim().to_lowercase();
+                if let Some(href) = a.value().attr("href") {
+                    // 检查 "next" 链接
+                    if text == "next" || text == ">" || text == "›" || text == "→" {
+                        if href.contains("pid=") {
+                            if let Some(pid_str) = href.split("pid=").nth(1) {
+                                if let Ok(pid) = pid_str.split('&').next().unwrap_or("0").parse::<u32>() {
+                                    // next 链接的 pid 是下一页的起始位置，所以总页数至少是下一页+1
+                                    let page = pid / PAGE_SIZE + 2;
+                                    if page > max_page {
+                                        max_page = page;
+                                        println!("[DEBUG] Found next page {} from pid {}", page, pid);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        println!("[DEBUG] Final max_page: {}", max_page);
+        max_page
     }
     
     fn parse_tag_list(&self, document: &Html) -> Vec<GelbooruTag> {

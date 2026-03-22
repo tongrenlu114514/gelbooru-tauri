@@ -13,6 +13,7 @@ lazy_static::lazy_static! {
 pub struct SearchResult {
     pub post_list: Vec<GelbooruPost>,
     pub tag_list: Vec<GelbooruTag>,
+    pub total_pages: u32,
 }
 
 #[tauri::command]
@@ -30,11 +31,11 @@ pub async fn search_posts(tags: Vec<String>, page: u32) -> Result<SearchResult, 
     
     println!("[DEBUG] Response length: {} bytes", html.len());
     
-    let (post_list, tag_list) = SCRAPER.parse_page(&html);
+    let (post_list, tag_list, total_pages) = SCRAPER.parse_page(&html);
     
-    println!("[DEBUG] Parsed {} posts, {} tags", post_list.len(), tag_list.len());
+    println!("[DEBUG] Parsed {} posts, {} tags, {} total pages", post_list.len(), tag_list.len(), total_pages);
     
-    Ok(SearchResult { post_list, tag_list })
+    Ok(SearchResult { post_list, tag_list, total_pages })
 }
 
 #[tauri::command]

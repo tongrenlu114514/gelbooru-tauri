@@ -6,6 +6,7 @@ export const useGalleryStore = defineStore('gallery', () => {
   const posts = ref<GelbooruPost[]>([])
   const tags = ref<GelbooruTag[]>([])
   const currentPage = ref(1)
+  const totalPages = ref(1)
   const searchTags = ref<string[]>([])
   const loading = ref(false)
   const totalPosts = ref(0)
@@ -20,6 +21,10 @@ export const useGalleryStore = defineStore('gallery', () => {
   
   function setTags(newTags: GelbooruTag[]) {
     tags.value = newTags
+  }
+  
+  function setTotalPages(pages: number) {
+    totalPages.value = pages
   }
   
   function setSearchTags(tags: string[]) {
@@ -40,12 +45,14 @@ export const useGalleryStore = defineStore('gallery', () => {
     posts,
     tags,
     currentPage,
+    totalPages,
     searchTags,
     loading,
     totalPosts,
     setPosts,
     appendPosts,
     setTags,
+    setTotalPages,
     setSearchTags,
     nextPage,
     setLoading

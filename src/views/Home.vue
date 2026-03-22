@@ -112,13 +112,14 @@ async function searchPosts(resetPage = false) {
       tags.push(selectedRating.value)
     }
     
-    const result = await invoke<{ postList: GelbooruPost[], tagList: GelbooruTag[] }>('search_posts', {
+    const result = await invoke<{ postList: GelbooruPost[], tagList: GelbooruTag[], totalPages: number }>('search_posts', {
       tags: tags,
       page: galleryStore.currentPage
     })
     
     galleryStore.setPosts(result.postList)
     galleryStore.setTags(result.tagList)
+    galleryStore.setTotalPages(result.totalPages)
   } catch (error) {
     console.error('Search failed:', error)
   } finally {
@@ -339,7 +340,7 @@ watch([selectedTags, selectedRating], () => {
         <n-space justify="center" style="margin-top: 20px;">
           <n-pagination
             v-model:page="galleryStore.currentPage"
-            :page-count="100"
+            :page-count="galleryStore.totalPages"
             @update:page="() => searchPosts(false)"
           />
         </n-space>

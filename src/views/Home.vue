@@ -386,7 +386,7 @@ watch([selectedTags, selectedRating], () => {
           <n-pagination
             v-model:page="galleryStore.currentPage"
             :page-count="galleryStore.totalPages"
-            @update:page="() => searchPosts(false)"
+            @update:page="() => searchPosts(false, true)"
           />
         </n-space>
       </template>

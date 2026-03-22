@@ -124,12 +124,34 @@ async function searchPosts(resetPage = false) {
   } finally {
     loading.value = false
     // 滚动到顶部
-    nextTick(() => {
-      document.documentElement.scrollTop = 0
-      document.body.scrollTop = 0
-      window.scrollTo(0, 0)
-    })
+    scrollToTop()
   }
+}
+
+// 滚动到顶部
+function scrollToTop() {
+  nextTick(() => {
+    // 查找所有可能的滚动容器
+    const containers = [
+      document.querySelector('.n-layout-content'),
+      document.querySelector('.n-layout-scroll-container'),
+      document.querySelector('.n-scrollbar-container'),
+      document.documentElement,
+      document.body
+    ]
+    
+    for (const container of containers) {
+      if (container && 'scrollTop' in container) {
+        (container as HTMLElement).scrollTop = 0
+      }
+    }
+    
+    // 最后尝试 scrollIntoView
+    const firstElement = document.querySelector('.home-view > *:first-child')
+    if (firstElement) {
+      firstElement.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  })
 }
 
 async function openPreview(index: number) {
@@ -145,12 +167,14 @@ async function openPreview(index: number) {
     
     const detail = await invoke<GelbooruPost>('get_post_detail', { id: post.id })
     console.log('[DEBUG] Got post detail:', detail)
+    console.log('[DEBUG] Sample URL:', detail.statistics.sample)
     console.log('[DEBUG] Image URL:', detail.statistics.image)
     
     previewPost.value = detail
     
-    // 通过后端获取图片 base64（带正确的请求头）
-    const base64Url = await invoke<string>('get_image_base64', { url: detail.statistics.image })
+    // 使用 sample URL 预览（更快加载）
+    const previewUrl = detail.statistics.sample || detail.statistics.image
+    const base64Url = await invoke<string>('get_image_base64', { url: previewUrl })
     console.log('[DEBUG] Got base64 image, length:', base64Url.length)
     previewImageUrl.value = base64Url
   } catch (error) {
@@ -191,30 +215,32 @@ async function downloadPost(post: GelbooruPost) {
     }
   }
   
-  downloadStore.addTask({
-    id: Date.now(),
-    postId: post.id,
-    imageUrl: imageUrl,
-    fileName: `${post.id}.${imageUrl.split('.').pop()}`,
-    status: 'pending',
-    progress: 0,
-    totalSize: 0,
-    downloadedSize: 0
-  });
+  const ext = imageUrl.split('.').pop() || 'jpg';
+  
+  try {
+    await downloadStore.addTask({
+      postId: post.id,
+      imageUrl: imageUrl,
+      fileName: `${post.id}.${ext}`
+    });
+  } catch (error) {
+    console.error('Failed to add download task:', error);
+  }
 }
 
 async function downloadCurrentPost() {
   if (previewPost.value) {
-    downloadStore.addTask({
-      id: Date.now(),
-      postId: previewPost.value.id,
-      imageUrl: previewPost.value.statistics.image,
-      fileName: `${previewPost.value.id}.${previewPost.value.statistics.image.split('.').pop()}`,
-      status: 'pending',
-      progress: 0,
-      totalSize: 0,
-      downloadedSize: 0
-    });
+    const ext = previewPost.value.statistics.image.split('.').pop() || 'jpg';
+    
+    try {
+      await downloadStore.addTask({
+        postId: previewPost.value.id,
+        imageUrl: previewPost.value.statistics.image,
+        fileName: `${previewPost.value.id}.${ext}`
+      });
+    } catch (error) {
+      console.error('Failed to add download task:', error);
+    }
   }
 }
 

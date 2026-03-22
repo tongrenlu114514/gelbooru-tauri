@@ -9,7 +9,8 @@ pub struct GelbooruPostStatistics {
     pub posted: String,
     pub source: String,
     pub score: i32,
-    pub image: String,
+    pub image: String,      // 原图 URL（用于下载）
+    pub sample: String,     // 预览图 URL（用于显示）
 }
 
 impl Default for GelbooruPostStatistics {
@@ -21,6 +22,7 @@ impl Default for GelbooruPostStatistics {
             source: String::new(),
             score: 0,
             image: String::new(),
+            sample: String::new(),
         }
     }
 }

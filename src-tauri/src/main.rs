@@ -14,10 +14,15 @@ fn main() {
             commands::gelbooru::search_posts,
             commands::gelbooru::get_post_detail,
             commands::gelbooru::get_image_base64,
+            commands::download::add_download_task,
             commands::download::start_download,
             commands::download::pause_download,
             commands::download::resume_download,
-            commands::download::get_download_progress,
+            commands::download::cancel_download,
+            commands::download::remove_download_task,
+            commands::download::get_download_tasks,
+            commands::download::clear_completed_tasks,
+            commands::download::open_file,
             commands::gallery::get_local_images,
         ])
         .run(tauri::generate_context!())

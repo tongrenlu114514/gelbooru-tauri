@@ -151,20 +151,20 @@ impl GelbooruScraper {
     fn parse_post_statistics(&self, document: &Html) -> Option<GelbooruPostStatistics> {
         let mut stats = GelbooruPostStatistics::default();
         
-        // 尝试从多种选择器获取原图 URL
-        let selectors = [
+        // 1. 获取预览图 URL (sample) - 从页面上的图片元素获取
+        let sample_selectors = [
             "#image",                    // 主图片元素
             "img[alt='image']",          // 带 alt 属性的图片
             ".image-container img",      // 图片容器中的图片
         ];
         
-        for selector_str in &selectors {
+        for selector_str in &sample_selectors {
             if let Ok(selector) = Selector::parse(selector_str) {
                 if let Some(img) = document.select(&selector).next() {
                     if let Some(src) = img.value().attr("src") {
                         if !src.is_empty() {
-                            stats.image = src.to_string();
-                            println!("[DEBUG] Found image via selector '{}': {}", selector_str, src);
+                            stats.sample = src.to_string();
+                            println!("[DEBUG] Found sample via selector '{}': {}", selector_str, src);
                             break;
                         }
                     }
@@ -172,6 +172,19 @@ impl GelbooruScraper {
             }
         }
         
+        // 2. 获取原图 URL (image) - 从 meta og:image 获取（用于下载）
+        if let Ok(meta_selector) = Selector::parse("meta[property='og:image']") {
+            if let Some(meta) = document.select(&meta_selector).next() {
+                if let Some(content) = meta.value().attr("content") {
+                    if !content.is_empty() {
+                        stats.image = content.to_string();
+                        println!("[DEBUG] Found original image via og:image: {}", content);
+                    }
+                }
+            }
+        }
+        
+        // 3. 解析其他统计信息
         let ul_selector = Selector::parse("ul#tag-list").ok()?;
         let li_selector = Selector::parse("li").ok()?;
         
@@ -209,7 +222,7 @@ impl GelbooruScraper {
                         .and_then(|span| span.text().collect::<String>().trim().parse().ok())
                         .unwrap_or(0);
                 }
-                // 如果还没有获取到图片 URL，尝试从 Original image 链接获取
+                // 如果还没有获取到原图 URL，尝试从 Original image 链接获取
                 if text.starts_with("Original image") && stats.image.is_empty() {
                     let img_url = li.select(&Selector::parse("a").ok()?)
                         .next()
@@ -224,29 +237,49 @@ impl GelbooruScraper {
                     } else {
                         stats.image = img_url;
                     }
+                    println!("[DEBUG] Found original image via Original image link: {}", stats.image);
                 }
             }
         }
         
-        // 确保 URL 是完整的
-        if stats.image.starts_with("//") {
-            stats.image = format!("https:{}", stats.image);
-        } else if stats.image.starts_with("/") && !stats.image.starts_with("//") {
-            // 如果只有路径，补充完整域名（gelbooru 的图片通常在 img2.gelbooru.com）
-            stats.image = format!("https://img2.gelbooru.com{}", stats.image);
+        // 修正 URL 格式
+        stats.sample = self.fix_image_url(&stats.sample);
+        stats.image = self.fix_image_url(&stats.image);
+        
+        // 如果 image 为空，使用 sample 作为后备
+        if stats.image.is_empty() {
+            stats.image = stats.sample.clone();
         }
         
-        // 修复 URL 中的双斜杠问题（在域名后面的路径部分）
-        if let Some(pos) = stats.image.find("://") {
-            let prefix = &stats.image[..pos + 3]; // "https://"
-            let rest = &stats.image[pos + 3..];
-            let fixed_rest = rest.replace("//", "/");
-            stats.image = format!("{}{}", prefix, fixed_rest);
-        }
-        
+        println!("[DEBUG] Final sample URL: {}", stats.sample);
         println!("[DEBUG] Final image URL: {}", stats.image);
         
         Some(stats)
+    }
+    
+    fn fix_image_url(&self, url: &str) -> String {
+        if url.is_empty() {
+            return String::new();
+        }
+        
+        let mut fixed = url.to_string();
+        
+        // 确保 URL 是完整的
+        if fixed.starts_with("//") {
+            fixed = format!("https:{}", fixed);
+        } else if fixed.starts_with("/") && !fixed.starts_with("//") {
+            fixed = format!("https://img2.gelbooru.com{}", fixed);
+        }
+        
+        // 修复 URL 中的双斜杠问题（在域名后面的路径部分）
+        if let Some(pos) = fixed.find("://") {
+            let prefix = &fixed[..pos + 3]; // "https://"
+            let rest = &fixed[pos + 3..];
+            let fixed_rest = rest.replace("//", "/");
+            fixed = format!("{}{}", prefix, fixed_rest);
+        }
+        
+        fixed
     }
     
     pub fn build_search_url(&self, tags: &[String], page: u32) -> String {

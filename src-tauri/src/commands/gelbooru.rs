@@ -1,6 +1,7 @@
-use crate::models::{GelbooruPost, GelbooruTag, GelbooruPage};
+use crate::models::{GelbooruPost, GelbooruTag};
 use crate::services::{HttpClient, GelbooruScraper};
 use std::sync::Arc;
+use std::error::Error;
 use tokio::sync::RwLock;
 
 lazy_static::lazy_static! {
@@ -25,8 +26,9 @@ pub async fn search_posts(tags: Vec<String>, page: u32) -> Result<SearchResult, 
     
     let html = client.get(&url).await
         .map_err(|e| {
-            println!("[ERROR] HTTP request failed: {}", e);
-            format!("HTTP request failed: {}", e)
+            let err_msg = format!("HTTP request failed: {} (source: {:?})", e, e.source());
+            println!("[ERROR] {}", err_msg);
+            err_msg
         })?;
     
     println!("[DEBUG] Response length: {} bytes", html.len());
@@ -46,7 +48,11 @@ pub async fn get_post_detail(id: u32) -> Result<GelbooruPost, String> {
     println!("[DEBUG] Getting post detail: {}", url);
     
     let html = client.get(&url).await
-        .map_err(|e| format!("HTTP request failed: {}", e))?;
+        .map_err(|e| {
+            let err_msg = format!("HTTP request failed: {} (source: {:?})", e, e.source());
+            println!("[ERROR] {}", err_msg);
+            err_msg
+        })?;
     
     let (tag_list, statistics) = SCRAPER.parse_post(&html)
         .ok_or_else(|| "Failed to parse post".to_string())?;

@@ -11,14 +11,28 @@ pub struct HttpClient {
 impl HttpClient {
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
         let jar = Arc::new(Jar::default());
-        let client = Client::builder()
+        let mut builder = Client::builder()
             .user_agent(USER_AGENT)
             .cookie_provider(jar.clone())
             .gzip(true)
             .redirect(reqwest::redirect::Policy::limited(10))
             .timeout(std::time::Duration::from_secs(60))
-            .connect_timeout(std::time::Duration::from_secs(30))
-            .build()?;
+            .connect_timeout(std::time::Duration::from_secs(30));
+        
+        // 尝试使用系统代理
+        #[cfg(target_os = "windows")]
+        {
+            // Windows 下检查环境变量代理
+            if let Ok(proxy) = std::env::var("HTTP_PROXY")
+                .or_else(|_| std::env::var("http_proxy"))
+            {
+                if let Ok(proxy_url) = reqwest::Url::parse(&proxy) {
+                    builder = builder.proxy(reqwest::Proxy::all(proxy_url)?);
+                }
+            }
+        }
+        
+        let client = builder.build()?;
         
         Ok(Self { client, jar })
     }

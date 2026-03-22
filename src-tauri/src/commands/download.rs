@@ -4,14 +4,13 @@ use std::fs;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use tokio::sync::{RwLock, mpsc, Semaphore};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
 use serde::{Serialize, Deserialize};
-use crate::services::HttpClient;
+use crate::commands::gelbooru::HTTP_CLIENT;
 
 lazy_static::lazy_static! {
     static ref DOWNLOAD_MANAGER: Arc<DownloadManager> = Arc::new(DownloadManager::new());
     static ref TASK_ID_COUNTER: AtomicU32 = AtomicU32::new(1);
-    static ref HTTP_CLIENT: RwLock<HttpClient> = RwLock::new(HttpClient::new().expect("Failed to create HTTP client"));
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -226,12 +225,7 @@ pub async fn start_download(
         // 开始下载
         let http_client = HTTP_CLIENT.read().await;
         let response = match http_client
-            .client()
-            .get(&task_clone.image_url)
-            .header("Referer", "https://gelbooru.com/")
-            .header("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
-            .header("Accept-Language", "en-US,en;q=0.9")
-            .send()
+            .download_image(&task_clone.image_url, "https://gelbooru.com/")
             .await 
         {
             Ok(r) => r,

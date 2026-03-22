@@ -5,7 +5,7 @@ use std::error::Error;
 use tokio::sync::RwLock;
 
 lazy_static::lazy_static! {
-    static ref HTTP_CLIENT: Arc<RwLock<HttpClient>> = Arc::new(RwLock::new(HttpClient::new().expect("Failed to create HTTP client")));
+    pub static ref HTTP_CLIENT: Arc<RwLock<HttpClient>> = Arc::new(RwLock::new(HttpClient::new().expect("Failed to create HTTP client")));
     static ref SCRAPER: GelbooruScraper = GelbooruScraper::new();
 }
 
@@ -15,6 +15,14 @@ pub struct SearchResult {
     pub post_list: Vec<GelbooruPost>,
     pub tag_list: Vec<GelbooruTag>,
     pub total_pages: u32,
+}
+
+#[tauri::command]
+pub async fn set_proxy(proxy_url: Option<String>) -> Result<(), String> {
+    let client = HTTP_CLIENT.read().await;
+    client.set_proxy(proxy_url)
+        .await
+        .map_err(|e| format!("Failed to set proxy: {}", e))
 }
 
 #[tauri::command]

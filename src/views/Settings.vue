@@ -7,21 +7,35 @@ import {
   NButton,
   NSpace,
   NSwitch,
-  NDivider
+  NDivider,
+  NGrid,
+  NGi
 } from 'naive-ui'
 import { useSettingsStore } from '@/stores/settings'
 import { storeToRefs } from 'pinia'
+import { invoke } from '@tauri-apps/api/core'
 
 const settingsStore = useSettingsStore()
-const { theme, downloadPath, concurrentDownloads } = storeToRefs(settingsStore)
+const { theme, downloadPath, concurrentDownloads, proxyEnabled, proxyHost, proxyPort } = storeToRefs(settingsStore)
 
-function saveSettings() {
-  // Save settings to localStorage or Tauri backend
+async function saveSettings() {
+  // Save settings to localStorage
   localStorage.setItem('settings', JSON.stringify({
     theme: theme.value,
     downloadPath: downloadPath.value,
-    concurrentDownloads: concurrentDownloads.value
+    concurrentDownloads: concurrentDownloads.value,
+    proxyEnabled: proxyEnabled.value,
+    proxyHost: proxyHost.value,
+    proxyPort: proxyPort.value
   }))
+  
+  // 更新后端代理设置
+  const proxyUrl = settingsStore.getProxyUrl()
+  try {
+    await invoke('set_proxy', { proxyUrl })
+  } catch (error) {
+    console.error('Failed to set proxy:', error)
+  }
 }
 </script>
 
@@ -49,6 +63,32 @@ function saveSettings() {
           :min="1"
           :max="10"
         />
+      </n-form-item>
+      
+      <n-divider />
+      
+      <n-form-item label="启用代理">
+        <n-switch v-model:value="proxyEnabled" />
+      </n-form-item>
+      
+      <n-form-item label="代理地址" v-if="proxyEnabled">
+        <n-grid :cols="2" :x-gap="12">
+          <n-gi>
+            <n-input 
+              v-model:value="proxyHost" 
+              placeholder="127.0.0.1"
+            />
+          </n-gi>
+          <n-gi>
+            <n-input-number 
+              v-model:value="proxyPort" 
+              :min="1"
+              :max="65535"
+              placeholder="端口"
+              style="width: 100%"
+            />
+          </n-gi>
+        </n-grid>
       </n-form-item>
       
       <n-divider />

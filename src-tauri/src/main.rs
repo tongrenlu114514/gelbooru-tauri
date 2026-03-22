@@ -14,6 +14,7 @@ fn main() {
             commands::gelbooru::search_posts,
             commands::gelbooru::get_post_detail,
             commands::gelbooru::get_image_base64,
+            commands::gelbooru::set_proxy,
             commands::download::add_download_task,
             commands::download::start_download,
             commands::download::pause_download,

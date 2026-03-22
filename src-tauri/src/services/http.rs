@@ -1,16 +1,28 @@
-use reqwest::{Client, cookie::Jar};
+use reqwest::{Client, cookie::Jar, Response};
 use std::sync::Arc;
+use tokio::sync::RwLock;
 
 const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 pub struct HttpClient {
-    client: Client,
+    client: RwLock<Client>,
     jar: Arc<Jar>,
 }
 
 impl HttpClient {
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
         let jar = Arc::new(Jar::default());
+        let default_proxy = Some("http://127.0.0.1:7897".to_string());
+        
+        let client = Self::build_client(&jar, default_proxy.as_deref())?;
+        
+        Ok(Self { 
+            client: RwLock::new(client), 
+            jar,
+        })
+    }
+    
+    fn build_client(jar: &Arc<Jar>, proxy_url: Option<&str>) -> Result<Client, Box<dyn std::error::Error>> {
         let mut builder = Client::builder()
             .user_agent(USER_AGENT)
             .cookie_provider(jar.clone())
@@ -19,34 +31,27 @@ impl HttpClient {
             .timeout(std::time::Duration::from_secs(60))
             .connect_timeout(std::time::Duration::from_secs(30));
         
-        // 默认代理地址
-        let proxy_url = "http://127.0.0.1:7897";
-        if let Ok(proxy) = reqwest::Url::parse(proxy_url) {
-            builder = builder.proxy(reqwest::Proxy::all(proxy)?);
-            println!("[INFO] Using proxy: {}", proxy_url);
-        }
-        
-        // 也可以通过环境变量覆盖
-        if let Ok(proxy) = std::env::var("HTTP_PROXY")
-            .or_else(|_| std::env::var("http_proxy"))
-        {
-            if let Ok(proxy_url) = reqwest::Url::parse(&proxy) {
-                builder = builder.proxy(reqwest::Proxy::all(proxy_url)?);
-                println!("[INFO] Using env proxy: {}", proxy);
+        if let Some(proxy) = proxy_url {
+            if !proxy.is_empty() {
+                if let Ok(proxy_uri) = reqwest::Url::parse(proxy) {
+                    builder = builder.proxy(reqwest::Proxy::all(proxy_uri)?);
+                    println!("[INFO] Using proxy: {}", proxy);
+                }
             }
         }
         
-        let client = builder.build()?;
-        
-        Ok(Self { client, jar })
+        Ok(builder.build()?)
     }
     
-    pub fn client(&self) -> &Client {
-        &self.client
+    pub async fn set_proxy(&self, proxy_url: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
+        let new_client = Self::build_client(&self.jar, proxy_url.as_deref())?;
+        *self.client.write().await = new_client;
+        println!("[INFO] Proxy updated: {:?}", proxy_url);
+        Ok(())
     }
     
     pub async fn get(&self, url: &str) -> Result<String, reqwest::Error> {
-        self.client
+        self.client.read().await
             .get(url)
             .send()
             .await?
@@ -55,7 +60,7 @@ impl HttpClient {
     }
     
     pub async fn get_bytes(&self, url: &str) -> Result<Vec<u8>, reqwest::Error> {
-        self.client
+        self.client.read().await
             .get(url)
             .send()
             .await?
@@ -65,7 +70,7 @@ impl HttpClient {
     }
     
     pub async fn get_image_with_referer(&self, url: &str, referer: &str) -> Result<Vec<u8>, reqwest::Error> {
-        self.client
+        self.client.read().await
             .get(url)
             .header("Referer", referer)
             .send()
@@ -73,6 +78,16 @@ impl HttpClient {
             .bytes()
             .await
             .map(|b| b.to_vec())
+    }
+    
+    pub async fn download_image(&self, url: &str, referer: &str) -> Result<Response, reqwest::Error> {
+        self.client.read().await
+            .get(url)
+            .header("Referer", referer)
+            .header("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
+            .header("Accept-Language", "en-US,en;q=0.9")
+            .send()
+            .await
     }
     
     pub fn load_cookies(&self, json_path: &str) -> Result<(), Box<dyn std::error::Error>> {

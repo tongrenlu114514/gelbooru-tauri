@@ -320,7 +320,7 @@ onMounted(() => {
 
 watch([selectedTags, selectedRating], () => {
   if (!loading.value) {
-    searchPosts(true)
+    searchPosts(true, true)
   }
 }, { deep: true })
 </script>

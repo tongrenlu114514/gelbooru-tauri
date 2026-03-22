@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, watch, computed, nextTick } from 'vue'
+import { onBeforeRouteLeave } from 'vue-router'
 import {
   NInput,
   NButton,
@@ -317,8 +318,27 @@ function handleKeydown(e: KeyboardEvent) {
 }
 
 onMounted(() => {
-  searchPosts()
+  // 尝试恢复页面状态
+  const savedState = galleryStore.restorePageState()
+  if (savedState) {
+    selectedTags.value = savedState.selectedTags
+    selectedRating.value = savedState.selectedRating
+    galleryStore.currentPage = savedState.currentPage
+    galleryStore.setPosts(savedState.posts)
+    galleryStore.setTags(savedState.tags)
+    galleryStore.setTotalPages(savedState.totalPages)
+    galleryStore.setSearchTags(savedState.searchTags)
+    console.log('[Home] Restored page state')
+  } else {
+    // 没有保存的状态，执行初始搜索
+    searchPosts()
+  }
   window.addEventListener('keydown', handleKeydown)
+})
+
+// 离开页面前保存状态
+onBeforeRouteLeave(() => {
+  galleryStore.savePageState(selectedTags.value, selectedRating.value)
 })
 
 watch([selectedTags, selectedRating], () => {

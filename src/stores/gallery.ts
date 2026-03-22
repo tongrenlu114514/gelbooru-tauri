@@ -10,6 +10,17 @@ interface CachedResult {
   timestamp: number
 }
 
+// 页面状态（用于切换页面后恢复）
+interface PageState {
+  selectedTags: string[]
+  selectedRating: string
+  currentPage: number
+  posts: GelbooruPost[]
+  tags: GelbooruTag[]
+  totalPages: number
+  searchTags: string[]
+}
+
 function createCacheKey(tags: string[], page: number): string {
   const sortedTags = [...tags].sort().join(',')
   return `${sortedTags}:${page}`
@@ -27,6 +38,9 @@ export const useGalleryStore = defineStore('gallery', () => {
   // 缓存：key = "tags:page", value = CachedResult
   const cache = new Map<string, CachedResult>()
   const CACHE_EXPIRE_TIME = 10 * 60 * 1000 // 10分钟过期
+  
+  // 页面状态
+  const pageState = ref<PageState | null>(null)
   
   function setPosts(newPosts: GelbooruPost[]) {
     posts.value = newPosts
@@ -47,7 +61,6 @@ export const useGalleryStore = defineStore('gallery', () => {
   function setSearchTags(tags: string[]) {
     searchTags.value = tags
     currentPage.value = 1
-    posts.value = []
   }
   
   function nextPage() {
@@ -56,6 +69,35 @@ export const useGalleryStore = defineStore('gallery', () => {
   
   function setLoading(value: boolean) {
     loading.value = value
+  }
+  
+  // 保存页面状态（离开页面前调用）
+  function savePageState(selectedTags: string[], selectedRating: string) {
+    pageState.value = {
+      selectedTags,
+      selectedRating,
+      currentPage: currentPage.value,
+      posts: posts.value,
+      tags: tags.value,
+      totalPages: totalPages.value,
+      searchTags: searchTags.value
+    }
+    console.log('[PageState] Saved:', pageState.value)
+  }
+  
+  // 恢复页面状态（返回页面时调用）
+  function restorePageState(): PageState | null {
+    if (pageState.value) {
+      console.log('[PageState] Restored:', pageState.value)
+      return pageState.value
+    }
+    return null
+  }
+  
+  // 清除页面状态
+  function clearPageState() {
+    pageState.value = null
+    console.log('[PageState] Cleared')
   }
   
   // 获取缓存
@@ -119,6 +161,9 @@ export const useGalleryStore = defineStore('gallery', () => {
     setSearchTags,
     nextPage,
     setLoading,
+    savePageState,
+    restorePageState,
+    clearPageState,
     getCache,
     setCache,
     clearCache,

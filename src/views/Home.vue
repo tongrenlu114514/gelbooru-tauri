@@ -107,13 +107,24 @@ async function searchPosts(resetPage = false) {
     galleryStore.currentPage = 1
   }
   
+  // 构建搜索标签
+  const tags = [...selectedTags.value]
+  if (selectedRating.value) {
+    tags.push(selectedRating.value)
+  }
+  
+  // 先检查缓存
+  const cached = galleryStore.getCache(tags, galleryStore.currentPage)
+  if (cached) {
+    galleryStore.setPosts(cached.posts)
+    galleryStore.setTags(cached.tags)
+    galleryStore.setTotalPages(cached.totalPages)
+    scrollToTop()
+    return
+  }
+  
   loading.value = true
   try {
-    const tags = [...selectedTags.value]
-    if (selectedRating.value) {
-      tags.push(selectedRating.value)
-    }
-    
     const result = await invoke<{ postList: GelbooruPost[], tagList: GelbooruTag[], totalPages: number }>('search_posts', {
       tags: tags,
       page: galleryStore.currentPage
@@ -122,6 +133,13 @@ async function searchPosts(resetPage = false) {
     galleryStore.setPosts(result.postList)
     galleryStore.setTags(result.tagList)
     galleryStore.setTotalPages(result.totalPages)
+    
+    // 缓存结果
+    galleryStore.setCache(tags, galleryStore.currentPage, {
+      posts: result.postList,
+      tags: result.tagList,
+      totalPages: result.totalPages
+    })
   } catch (error) {
     console.error('Search failed:', error)
   } finally {

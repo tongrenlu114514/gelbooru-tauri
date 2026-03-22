@@ -204,25 +204,32 @@ async function nextImage() {
 }
 
 async function downloadPost(post: GelbooruPost) {
-  // 先获取详情以获取原图 URL
+  // 先获取详情以获取原图 URL 和完整标签
   let imageUrl = post.statistics.image;
-  if (!imageUrl) {
+  let tags = post.tagList || [];
+  let posted = post.statistics.posted || '';
+  let rating = post.statistics.rating || '';
+  
+  if (!imageUrl || tags.length === 0) {
     try {
       const detail = await invoke<GelbooruPost>('get_post_detail', { id: post.id });
       imageUrl = detail.statistics.image;
+      tags = detail.tagList || [];
+      posted = detail.statistics.posted || '';
+      rating = detail.statistics.rating || '';
     } catch (error) {
       console.error('Failed to get post detail for download:', error);
       return;
     }
   }
   
-  const ext = imageUrl.split('.').pop() || 'jpg';
-  
   try {
     await downloadStore.addTask({
       postId: post.id,
       imageUrl: imageUrl,
-      fileName: `${post.id}.${ext}`
+      posted: posted,
+      rating: rating,
+      tags: tags
     });
   } catch (error) {
     console.error('Failed to add download task:', error);
@@ -231,13 +238,13 @@ async function downloadPost(post: GelbooruPost) {
 
 async function downloadCurrentPost() {
   if (previewPost.value) {
-    const ext = previewPost.value.statistics.image.split('.').pop() || 'jpg';
-    
     try {
       await downloadStore.addTask({
         postId: previewPost.value.id,
         imageUrl: previewPost.value.statistics.image,
-        fileName: `${previewPost.value.id}.${ext}`
+        posted: previewPost.value.statistics.posted || '',
+        rating: previewPost.value.statistics.rating || '',
+        tags: previewPost.value.tagList || []
       });
     } catch (error) {
       console.error('Failed to add download task:', error);

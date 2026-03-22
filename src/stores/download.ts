@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { useSettingsStore } from './settings'
+import type { GelbooruTag } from '@/types'
 
 export interface DownloadTask {
   id: number
@@ -25,6 +26,73 @@ interface DownloadProgressEvent {
   downloadedSize: number
   totalSize: number
   error?: string
+}
+
+interface PostMeta {
+  postId: number
+  imageUrl: string
+  posted: string      // 日期
+  rating: string      // 分级
+  tags: GelbooruTag[] // 标签列表
+}
+
+// 清理文件名中的非法字符
+function sanitizeFileName(name: string): string {
+  return name
+    .replace(/[<>:"/\\|?*]/g, '_')
+    .replace(/\s+/g, '_')
+    .replace(/_{2,}/g, '_')
+    .replace(/^_|_$/g, '')
+}
+
+// 从标签列表中提取特定类型的标签
+function extractTagsByType(tags: GelbooruTag[], type: string): string[] {
+  return tags
+    .filter(t => t.tagType.toLowerCase() === type.toLowerCase())
+    .map(t => sanitizeFileName(t.text))
+}
+
+// 生成保存路径: {日期}/{分级}/{作品}/[{角色}]{id}(artist).{ext}
+function generateSavePath(meta: PostMeta, basePath: string): string {
+  // 提取各类型标签
+  const artists = extractTagsByType(meta.tags, 'artist')
+  const characters = extractTagsByType(meta.tags, 'character')
+  const copyrights = extractTagsByType(meta.tags, 'copyright')
+  
+  // 解析日期 (格式可能是 "2024-03-22 12:34:56" 或其他)
+  let dateStr = 'unknown'
+  if (meta.posted) {
+    const match = meta.posted.match(/^(\d{4}-\d{2}-\d{2})/)
+    if (match) {
+      dateStr = match[1]
+    }
+  }
+  
+  // 分级
+  let rating = meta.rating?.toLowerCase() || 'unknown'
+  if (rating === 'safe' || rating === 's') rating = 'safe'
+  else if (rating === 'questionable' || rating === 'q') rating = 'questionable'
+  else if (rating === 'explicit' || rating === 'e') rating = 'explicit'
+  
+  // 作品/版权（取第一个）
+  const copyright = copyrights.length > 0 ? copyrights[0] : 'unknown'
+  
+  // 角色列表（用逗号连接）
+  const characterPart = characters.length > 0 ? `[${characters.join(',')}]` : ''
+  
+  // 艺术家（取第一个）
+  const artistPart = artists.length > 0 ? `(${artists[0]})` : ''
+  
+  // 获取扩展名
+  const ext = meta.imageUrl.split('.').pop()?.split('?')[0] || 'jpg'
+  
+  // 构建文件名: [角色]id(艺术家).ext
+  const fileName = `${characterPart}${meta.postId}${artistPart}.${ext}`
+  
+  // 构建完整路径: 基础路径/日期/分级/作品/文件名
+  const savePath = `${basePath}/${dateStr}/${rating}/${copyright}/${fileName}`
+  
+  return savePath
 }
 
 export const useDownloadStore = defineStore('download', () => {
@@ -59,21 +127,20 @@ export const useDownloadStore = defineStore('download', () => {
   }
   
   // 添加任务
-  async function addTask(options: {
-    postId: number
-    imageUrl: string
-    fileName: string
-  }) {
+  async function addTask(meta: PostMeta) {
     await initListeners()
     
     const settingsStore = useSettingsStore()
-    const savePath = `${settingsStore.downloadPath}/${options.fileName}`
+    const savePath = generateSavePath(meta, settingsStore.downloadPath)
+    
+    // 提取文件名用于显示
+    const fileName = savePath.split('/').pop() || `${meta.postId}`
     
     try {
       const task = await invoke<DownloadTask>('add_download_task', {
-        postId: options.postId,
-        imageUrl: options.imageUrl,
-        fileName: options.fileName,
+        postId: meta.postId,
+        imageUrl: meta.imageUrl,
+        fileName: fileName,
         savePath: savePath
       })
       

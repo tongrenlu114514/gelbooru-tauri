@@ -19,16 +19,20 @@ impl HttpClient {
             .timeout(std::time::Duration::from_secs(60))
             .connect_timeout(std::time::Duration::from_secs(30));
         
-        // 尝试使用系统代理
-        #[cfg(target_os = "windows")]
+        // 默认代理地址
+        let proxy_url = "http://127.0.0.1:7897";
+        if let Ok(proxy) = reqwest::Url::parse(proxy_url) {
+            builder = builder.proxy(reqwest::Proxy::all(proxy)?);
+            println!("[INFO] Using proxy: {}", proxy_url);
+        }
+        
+        // 也可以通过环境变量覆盖
+        if let Ok(proxy) = std::env::var("HTTP_PROXY")
+            .or_else(|_| std::env::var("http_proxy"))
         {
-            // Windows 下检查环境变量代理
-            if let Ok(proxy) = std::env::var("HTTP_PROXY")
-                .or_else(|_| std::env::var("http_proxy"))
-            {
-                if let Ok(proxy_url) = reqwest::Url::parse(&proxy) {
-                    builder = builder.proxy(reqwest::Proxy::all(proxy_url)?);
-                }
+            if let Ok(proxy_url) = reqwest::Url::parse(&proxy) {
+                builder = builder.proxy(reqwest::Proxy::all(proxy_url)?);
+                println!("[INFO] Using env proxy: {}", proxy);
             }
         }
         

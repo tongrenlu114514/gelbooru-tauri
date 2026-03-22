@@ -6,6 +6,7 @@ interface CachedResult {
   posts: GelbooruPost[]
   tags: GelbooruTag[]
   totalPages: number
+  searchTags: string[]  // 搜索条件
   timestamp: number
 }
 

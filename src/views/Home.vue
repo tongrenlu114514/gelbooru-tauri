@@ -120,6 +120,7 @@ async function searchPosts(resetPage = false, forceRefresh = false) {
       galleryStore.setPosts(cached.posts)
       galleryStore.setTags(cached.tags)
       galleryStore.setTotalPages(cached.totalPages)
+      galleryStore.setSearchTags(cached.searchTags)
       scrollToTop()
       return
     }
@@ -135,12 +136,14 @@ async function searchPosts(resetPage = false, forceRefresh = false) {
     galleryStore.setPosts(result.postList)
     galleryStore.setTags(result.tagList)
     galleryStore.setTotalPages(result.totalPages)
+    galleryStore.setSearchTags(tags)
     
     // 缓存结果
     galleryStore.setCache(tags, galleryStore.currentPage, {
       posts: result.postList,
       tags: result.tagList,
-      totalPages: result.totalPages
+      totalPages: result.totalPages,
+      searchTags: tags
     })
   } catch (error) {
     console.error('Search failed:', error)

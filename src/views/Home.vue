@@ -95,7 +95,7 @@ const ratingOptions = [
 ]
 const selectedRating = ref('')
 
-async function searchPosts(resetPage = false) {
+async function searchPosts(resetPage = false, forceRefresh = false) {
   // 先把输入框的内容加入标签
   if (searchInput.value.trim()) {
     addTag(searchInput.value.trim())
@@ -113,14 +113,16 @@ async function searchPosts(resetPage = false) {
     tags.push(selectedRating.value)
   }
   
-  // 先检查缓存
-  const cached = galleryStore.getCache(tags, galleryStore.currentPage)
-  if (cached) {
-    galleryStore.setPosts(cached.posts)
-    galleryStore.setTags(cached.tags)
-    galleryStore.setTotalPages(cached.totalPages)
-    scrollToTop()
-    return
+  // 非强制刷新时先检查缓存
+  if (!forceRefresh) {
+    const cached = galleryStore.getCache(tags, galleryStore.currentPage)
+    if (cached) {
+      galleryStore.setPosts(cached.posts)
+      galleryStore.setTags(cached.tags)
+      galleryStore.setTotalPages(cached.totalPages)
+      scrollToTop()
+      return
+    }
   }
   
   loading.value = true
@@ -339,7 +341,7 @@ watch([selectedTags, selectedRating], () => {
           :options="ratingOptions"
           style="width: 150px"
         />
-        <n-button type="primary" @click="searchPosts(true)">搜索</n-button>
+        <n-button type="primary" @click="searchPosts(true, true)">搜索</n-button>
       </n-space>
       
       <!-- Selected Tags -->

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { h, onMounted, type VNode } from 'vue'
+import { h, onMounted, computed, type VNode } from 'vue'
 import {
   NDataTable,
   NButton,
@@ -14,6 +14,11 @@ import type { DataTableColumns } from 'naive-ui'
 import type { DownloadTask } from '@/stores/download'
 
 const downloadStore = useDownloadStore()
+
+// 按 id 倒序排列的任务列表
+const sortedTasks = computed(() => {
+  return [...downloadStore.tasks].sort((a, b) => b.id - a.id)
+})
 
 const columns: DataTableColumns<DownloadTask> = [
   {
@@ -185,7 +190,7 @@ onMounted(() => {
     <n-data-table
       v-if="downloadStore.tasks.length > 0"
       :columns="columns"
-      :data="downloadStore.tasks"
+      :data="sortedTasks"
       :bordered="false"
       :row-key="(row: DownloadTask) => row.id"
     />

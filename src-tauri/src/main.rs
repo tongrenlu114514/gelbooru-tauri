@@ -25,6 +25,8 @@ fn main() {
             commands::download::open_file,
             commands::gallery::get_local_images,
             commands::gallery::delete_image,
+            commands::gallery::get_directory_tree,
+            commands::gallery::get_directory_images,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

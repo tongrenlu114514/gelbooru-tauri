@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, h } from 'vue'
 import {
   NEmpty,
   NButton,
@@ -7,13 +7,24 @@ import {
   NText,
   NSpin,
   NIcon,
-  NList,
-  NListItem,
+  NTree,
   NModal,
+  NLayout,
+  NLayoutSider,
+  NLayoutContent,
   useMessage,
-  useDialog
+  useDialog,
+  type TreeOption
 } from 'naive-ui'
-import { RefreshOutline, OpenOutline, FolderOpenOutline, TrashOutline, ChevronBackOutline, ChevronForwardOutline } from '@vicons/ionicons5'
+import { 
+  RefreshOutline, 
+  OpenOutline, 
+  FolderOpenOutline, 
+  TrashOutline, 
+  ChevronBackOutline, 
+  ChevronForwardOutline,
+  FolderOutline
+} from '@vicons/ionicons5'
 import { invoke } from '@tauri-apps/api/core'
 import { convertFileSrc } from '@tauri-apps/api/core'
 
@@ -25,23 +36,46 @@ interface ImageInfo {
   name: string
 }
 
-interface PaginatedImages {
-  images: ImageInfo[]
-  total: number
-  has_more: boolean
+interface SubDirInfo {
+  path: string
+  name: string
+  imageCount: number
+  thumbnail?: string
 }
 
+interface TreeNode {
+  key: string
+  label: string
+  path: string
+  isLeaf: boolean
+  imageCount: number
+  children?: TreeNode[]
+  thumbnail?: string
+}
+
+const treeData = ref<TreeNode[]>([])
+const selectedKey = ref<string | null>(null)
+const subdirs = ref<SubDirInfo[]>([])
 const images = ref<ImageInfo[]>([])
-const loading = ref(false)
-const currentPage = ref(1)
-const totalImages = ref(0)
-const hasMore = ref(false)
-const PAGE_SIZE = 100
+const loadingTree = ref(false)
+const loadingImages = ref(false)
 
 const showPreview = ref(false)
 const previewIndex = ref(0)
 
 const currentImage = computed(() => images.value[previewIndex.value])
+
+const currentPath = computed(() => selectedKey.value || '')
+
+async function openCurrentFolder() {
+  if (currentPath.value) {
+    try {
+      await invoke('open_file', { path: currentPath.value })
+    } catch (error) {
+      console.error('Failed to open folder:', error)
+    }
+  }
+}
 
 function openPreview(index: number) {
   previewIndex.value = index
@@ -96,7 +130,6 @@ async function deleteImage(index: number) {
       try {
         await invoke('delete_image', { path: img.path })
         images.value.splice(index, 1)
-        totalImages.value--
         if (showPreview.value && previewIndex.value >= images.value.length) {
           previewIndex.value = Math.max(0, images.value.length - 1)
         }
@@ -104,6 +137,8 @@ async function deleteImage(index: number) {
           showPreview.value = false
         }
         message.success('删除成功')
+        // Refresh tree to update counts
+        await loadTree()
       } catch (error) {
         message.error(`删除失败: ${error}`)
       }
@@ -111,45 +146,99 @@ async function deleteImage(index: number) {
   })
 }
 
-async function loadImages(page: number = 1, append: boolean = false) {
-  if (loading.value) return
-  loading.value = true
-  
-  try {
-    const result = await invoke<PaginatedImages>('get_local_images', {
-      page,
-      pageSize: PAGE_SIZE
-    })
-    
-    if (append) {
-      images.value.push(...result.images)
+function renderTreeLabel({ option }: { option: TreeOption }) {
+  const node = option as unknown as TreeNode
+  return h('div', { class: 'tree-node-label' }, [
+    h(NIcon, { 
+      size: 16, 
+      style: { marginRight: '6px' },
+      color: '#f0a020'
+    }, () => h(FolderOutline)),
+    h('span', { style: { flex: 1 } }, node.label as string),
+    h('span', { 
+      style: { 
+        marginLeft: '8px', 
+        fontSize: '12px', 
+        color: '#999',
+        backgroundColor: '#f5f5f5',
+        padding: '2px 6px',
+        borderRadius: '10px'
+      } 
+    }, `${node.imageCount}`)
+  ])
+}
+
+function handleTreeSelect(keys: string[]) {
+  if (keys.length > 0) {
+    selectedKey.value = keys[0]
+    const node = findNodeByKey(treeData.value, keys[0])
+    if (node) {
+      loadImagesForDirectory(node.path)
     } else {
-      images.value = result.images
+      images.value = []
     }
-    
-    currentPage.value = page
-    totalImages.value = result.total
-    hasMore.value = result.has_more
-  } catch (error) {
-    console.error('Failed to load images:', error)
-  } finally {
-    loading.value = false
   }
 }
 
-async function loadMore() {
-  if (!hasMore.value || loading.value) return
-  await loadImages(currentPage.value + 1, true)
+function findNodeByKey(nodes: TreeNode[], key: string): TreeNode | null {
+  for (const node of nodes) {
+    if (node.key === key) return node
+    if (node.children) {
+      const found = findNodeByKey(node.children, key)
+      if (found) return found
+    }
+  }
+  return null
+}
+
+async function loadTree() {
+  loadingTree.value = true
+  try {
+    const result = await invoke<TreeNode[]>('get_directory_tree', {})
+    treeData.value = result
+  } catch (error) {
+    console.error('Failed to load directory tree:', error)
+  } finally {
+    loadingTree.value = false
+  }
+}
+
+async function loadImagesForDirectory(dirPath: string) {
+  loadingImages.value = true
+  try {
+    const result = await invoke<{ subdirs: SubDirInfo[]; images: ImageInfo[]; total: number }>('get_directory_images', {
+      dirPath
+    })
+    subdirs.value = result.subdirs
+    images.value = result.images
+  } catch (error) {
+    console.error('Failed to load images:', error)
+    subdirs.value = []
+    images.value = []
+  } finally {
+    loadingImages.value = false
+  }
+}
+
+function enterSubdir(subdir: SubDirInfo) {
+  selectedKey.value = subdir.path
+  loadImagesForDirectory(subdir.path)
+  // Expand tree node
+  const node = findNodeByKey(treeData.value, subdir.path)
+  if (node) {
+    // Tree will auto-expand when selected
+  }
 }
 
 async function refresh() {
-  currentPage.value = 1
+  selectedKey.value = null
+  subdirs.value = []
   images.value = []
-  await loadImages(1)
+  await loadTree()
 }
 
 onMounted(() => {
-  loadImages()
+  loadTree()
   window.addEventListener('keydown', handleKeydown)
 })
 </script>
@@ -159,11 +248,8 @@ onMounted(() => {
     <n-space justify="space-between" align="center" style="margin-bottom: 16px;">
       <span style="font-size: 18px; font-weight: 500;">
         本地图库
-        <n-text depth="3" style="font-size: 14px; margin-left: 8px;">
-          (共 {{ totalImages }} 张)
-        </n-text>
       </span>
-      <n-button @click="refresh" :loading="loading && currentPage === 1">
+      <n-button @click="refresh" :loading="loadingTree">
         <template #icon>
           <n-icon><RefreshOutline /></n-icon>
         </template>
@@ -171,38 +257,86 @@ onMounted(() => {
       </n-button>
     </n-space>
     
-    <n-spin :show="loading && currentPage === 1">
-      <n-list v-if="images.length > 0" hoverable clickable>
-        <n-list-item v-for="(img, index) in images" :key="index" @click="openPreview(index)">
-          <template #prefix>
-            <n-text depth="3" style="min-width: 40px; text-align: right;">
-              {{ (currentPage - 1) * PAGE_SIZE + index + 1 }}
-            </n-text>
-          </template>
-          <n-text style="flex: 1; cursor: pointer;">{{ img.name }}</n-text>
-          <template #suffix>
-            <div class="action-buttons">
-              <n-button size="small" quaternary @click.stop="openImage(img.path)">
-                <template #icon>
-                  <n-icon><OpenOutline /></n-icon>
-                </template>
-              </n-button>
-              <n-button size="small" quaternary @click.stop="openFolder(img.path)">
-                <template #icon>
-                  <n-icon><FolderOpenOutline /></n-icon>
-                </template>
-              </n-button>
-              <n-button size="small" quaternary @click.stop="deleteImage(index)">
-                <template #icon>
-                  <n-icon><TrashOutline /></n-icon>
-                </template>
-              </n-button>
+    <n-layout has-sider style="height: calc(100vh - 140px);">
+      <n-layout-sider
+        bordered
+        :width="280"
+        :native-scrollbar="false"
+        content-style="padding: 8px;"
+      >
+        <n-spin :show="loadingTree">
+          <n-tree
+            v-if="treeData.length > 0"
+            :data="treeData"
+            :render-label="renderTreeLabel"
+            :selected-keys="selectedKey ? [selectedKey] : []"
+            block-line
+            expand-on-click
+            @update:selected-keys="handleTreeSelect"
+          />
+          <n-empty v-else description="暂无本地图片" />
+        </n-spin>
+      </n-layout-sider>
+      
+      <n-layout-content content-style="padding: 12px;">
+        <div v-if="selectedKey" class="path-bar" @click="openCurrentFolder">
+          <n-icon :size="16"><FolderOpenOutline /></n-icon>
+          <span class="path-text">{{ currentPath }}</span>
+        </div>
+        <n-spin :show="loadingImages">
+          <div v-if="subdirs.length > 0 || images.length > 0" class="content-grid">
+            <!-- 子目录卡片 -->
+            <div 
+              v-for="subdir in subdirs" 
+              :key="subdir.path" 
+              class="folder-card"
+              @click="enterSubdir(subdir)"
+            >
+              <div class="folder-preview">
+                <img v-if="subdir.thumbnail" :src="convertFileSrc(subdir.thumbnail)" alt="" />
+                <n-icon v-else :size="48" color="#f0a020"><FolderOutline /></n-icon>
+              </div>
+              <div class="folder-info">
+                <n-icon :size="16" color="#f0a020"><FolderOutline /></n-icon>
+                <span class="folder-name">{{ subdir.name }}</span>
+                <span class="folder-count">{{ subdir.imageCount }}</span>
+              </div>
             </div>
-          </template>
-        </n-list-item>
-      </n-list>
-      <n-empty v-else-if="!loading" description="暂无本地图片" />
-    </n-spin>
+            <!-- 图片卡片 -->
+            <div 
+              v-for="(img, index) in images" 
+              :key="img.path" 
+              class="image-card"
+              @click="openPreview(index)"
+            >
+              <img :src="convertFileSrc(img.path)" :alt="img.name" />
+              <div class="image-overlay">
+                <div class="image-name">{{ img.name }}</div>
+                <div class="image-actions">
+                  <n-button size="tiny" quaternary @click.stop="openImage(img.path)">
+                    <template #icon>
+                      <n-icon><OpenOutline /></n-icon>
+                    </template>
+                  </n-button>
+                  <n-button size="tiny" quaternary @click.stop="openFolder(img.path)">
+                    <template #icon>
+                      <n-icon><FolderOpenOutline /></n-icon>
+                    </template>
+                  </n-button>
+                  <n-button size="tiny" quaternary @click.stop="deleteImage(index)">
+                    <template #icon>
+                      <n-icon><TrashOutline /></n-icon>
+                    </template>
+                  </n-button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <n-empty v-else-if="!loadingImages && selectedKey" description="该目录下没有图片" />
+          <n-empty v-else-if="!loadingImages" description="请从左侧选择目录查看图片" />
+        </n-spin>
+      </n-layout-content>
+    </n-layout>
     
     <n-modal v-model:show="showPreview" preset="card" style="width: auto; max-width: 90vw; max-height: 90vh;">
       <template #header>
@@ -249,17 +383,6 @@ onMounted(() => {
         </div>
       </div>
     </n-modal>
-    
-    <div v-if="hasMore" style="text-align: center; margin-top: 24px;">
-      <n-button 
-        @click="loadMore" 
-        :loading="loading && currentPage > 1"
-        type="primary"
-        ghost
-      >
-        加载更多 (已加载 {{ images.length }} / {{ totalImages }} 张)
-      </n-button>
-    </div>
   </div>
 </template>
 
@@ -268,10 +391,160 @@ onMounted(() => {
   padding: 0;
 }
 
-.action-buttons {
-  display: inline-flex;
+.path-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  background: #f5f5f5;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.path-bar:hover {
+  background: #ebebeb;
+}
+
+.path-text {
+  font-size: 13px;
+  color: #666;
+  word-break: break-all;
+}
+
+.tree-node-label {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 2px 0;
+}
+
+.content-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.folder-card {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  background: linear-gradient(135deg, #fff8e6 0%, #fff3d6 100%);
+  border: 2px solid #f0a020;
+  box-shadow: 0 2px 8px rgba(240, 160, 32, 0.2);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.folder-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(240, 160, 32, 0.35);
+}
+
+.folder-preview {
+  width: 100%;
+  height: calc(100% - 36px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.folder-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.85;
+}
+
+.folder-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: rgba(240, 160, 32, 0.15);
+}
+
+.folder-name {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #8b6914;
+}
+
+.folder-count {
+  font-size: 11px;
+  color: #a08020;
+  background: rgba(255, 255, 255, 0.7);
+  padding: 2px 6px;
+  border-radius: 8px;
+}
+
+.image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.image-card {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  background: #f5f5f5;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.image-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.image-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.image-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
+  padding: 24px 8px 8px;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.image-card:hover .image-overlay {
+  opacity: 1;
+}
+
+.image-name {
+  color: white;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.image-actions {
+  display: flex;
   gap: 4px;
-  flex-wrap: nowrap;
+  margin-top: 4px;
+}
+
+.image-actions .n-button {
+  color: white;
 }
 
 .preview-container {

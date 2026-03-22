@@ -15,7 +15,7 @@ tauri-plugin-fs = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
-reqwest = { version = "0.12", features = ["cookies", "gzip", "json", "stream"] }
+reqwest = { version = "0.12", features = ["cookies", "gzip", "json", "stream", "rustls-tls"], default-features = false }
 futures = "0.3"
 scraper = "0.22"
 rusqlite = { version = "0.32", features = ["bundled"] }

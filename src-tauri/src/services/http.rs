@@ -15,9 +15,16 @@ impl HttpClient {
             .user_agent(USER_AGENT)
             .cookie_provider(jar.clone())
             .gzip(true)
+            .redirect(reqwest::redirect::Policy::limited(10))
+            .timeout(std::time::Duration::from_secs(60))
+            .connect_timeout(std::time::Duration::from_secs(30))
             .build()?;
         
         Ok(Self { client, jar })
+    }
+    
+    pub fn client(&self) -> &Client {
+        &self.client
     }
     
     pub async fn get(&self, url: &str) -> Result<String, reqwest::Error> {

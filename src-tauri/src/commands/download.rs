@@ -6,10 +6,12 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use tokio::sync::{RwLock, mpsc, Semaphore};
 use tauri::{AppHandle, Emitter, Manager};
 use serde::{Serialize, Deserialize};
+use crate::services::HttpClient;
 
 lazy_static::lazy_static! {
     static ref DOWNLOAD_MANAGER: Arc<DownloadManager> = Arc::new(DownloadManager::new());
     static ref TASK_ID_COUNTER: AtomicU32 = AtomicU32::new(1);
+    static ref HTTP_CLIENT: RwLock<HttpClient> = RwLock::new(HttpClient::new().expect("Failed to create HTTP client"));
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -222,17 +224,13 @@ pub async fn start_download(
         }
         
         // 开始下载
-        let client = reqwest::Client::builder()
-            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-            .gzip(true)
-            .redirect(reqwest::redirect::Policy::limited(10))
-            .build()
-            .unwrap();
-        
-        let response = match client
+        let http_client = HTTP_CLIENT.read().await;
+        let response = match http_client
+            .client()
             .get(&task_clone.image_url)
             .header("Referer", "https://gelbooru.com/")
             .header("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
+            .header("Accept-Language", "en-US,en;q=0.9")
             .send()
             .await 
         {

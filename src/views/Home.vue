@@ -96,7 +96,7 @@ const ratingOptions = [
 ]
 const selectedRating = ref('')
 
-async function searchPosts(resetPage = false, forceRefresh = false) {
+async function searchPosts(resetPage = false) {
   // 先把输入框的内容加入标签
   if (searchInput.value.trim()) {
     addTag(searchInput.value.trim())
@@ -114,19 +114,6 @@ async function searchPosts(resetPage = false, forceRefresh = false) {
     tags.push(selectedRating.value)
   }
   
-  // 非强制刷新时先检查缓存
-  if (!forceRefresh) {
-    const cached = galleryStore.getCache(tags, galleryStore.currentPage)
-    if (cached) {
-      galleryStore.setPosts(cached.posts)
-      galleryStore.setTags(cached.tags)
-      galleryStore.setTotalPages(cached.totalPages)
-      galleryStore.setSearchTags(cached.searchTags)
-      scrollToTop()
-      return
-    }
-  }
-  
   loading.value = true
   try {
     const result = await invoke<{ postList: GelbooruPost[], tagList: GelbooruTag[], totalPages: number }>('search_posts', {
@@ -138,14 +125,6 @@ async function searchPosts(resetPage = false, forceRefresh = false) {
     galleryStore.setTags(result.tagList)
     galleryStore.setTotalPages(result.totalPages)
     galleryStore.setSearchTags(tags)
-    
-    // 缓存结果
-    galleryStore.setCache(tags, galleryStore.currentPage, {
-      posts: result.postList,
-      tags: result.tagList,
-      totalPages: result.totalPages,
-      searchTags: tags
-    })
   } catch (error) {
     console.error('Search failed:', error)
   } finally {
@@ -343,7 +322,7 @@ onBeforeRouteLeave(() => {
 
 watch([selectedTags, selectedRating], () => {
   if (!loading.value) {
-    searchPosts(true, true)
+    searchPosts(true)
   }
 }, { deep: true })
 </script>
@@ -364,7 +343,7 @@ watch([selectedTags, selectedRating], () => {
           :options="ratingOptions"
           style="width: 150px"
         />
-        <n-button type="primary" @click="searchPosts(true, true)">搜索</n-button>
+        <n-button type="primary" @click="searchPosts(true)">搜索</n-button>
       </n-space>
       
       <!-- Selected Tags -->
@@ -409,7 +388,7 @@ watch([selectedTags, selectedRating], () => {
           <n-pagination
             v-model:page="galleryStore.currentPage"
             :page-count="galleryStore.totalPages"
-            @update:page="() => searchPosts(false, true)"
+            @update:page="() => searchPosts(false)"
           />
         </n-space>
       </template>

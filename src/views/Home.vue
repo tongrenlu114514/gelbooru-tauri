@@ -9,7 +9,8 @@ import {
   NEmpty,
   NSelect,
   NPagination,
-  NIcon
+  NIcon,
+  useMessage
 } from 'naive-ui'
 import { ChevronBack, ChevronForward, Close } from '@vicons/ionicons5'
 import { useGalleryStore } from '@/stores/gallery'
@@ -19,6 +20,7 @@ import type { GelbooruPost, GelbooruTag } from '@/types'
 
 const galleryStore = useGalleryStore()
 const downloadStore = useDownloadStore()
+const message = useMessage()
 
 const searchInput = ref('')
 const selectedTags = ref<string[]>([])
@@ -219,8 +221,14 @@ async function downloadPost(post: GelbooruPost) {
       rating = detail.statistics.rating || '';
     } catch (error) {
       console.error('Failed to get post detail for download:', error);
+      message.error('获取图片详情失败');
       return;
     }
+  }
+  
+  if (!imageUrl) {
+    message.error('无法获取图片地址');
+    return;
   }
   
   try {
@@ -231,23 +239,33 @@ async function downloadPost(post: GelbooruPost) {
       rating: rating,
       tags: tags
     });
+    message.success('已添加到下载队列');
   } catch (error) {
     console.error('Failed to add download task:', error);
+    message.error('添加下载任务失败');
   }
 }
 
 async function downloadCurrentPost() {
   if (previewPost.value) {
+    const imageUrl = previewPost.value.statistics.image;
+    if (!imageUrl) {
+      message.error('无法获取图片地址');
+      return;
+    }
+    
     try {
       await downloadStore.addTask({
         postId: previewPost.value.id,
-        imageUrl: previewPost.value.statistics.image,
+        imageUrl: imageUrl,
         posted: previewPost.value.statistics.posted || '',
         rating: previewPost.value.statistics.rating || '',
         tags: previewPost.value.tagList || []
       });
+      message.success('已添加到下载队列');
     } catch (error) {
       console.error('Failed to add download task:', error);
+      message.error('添加下载任务失败');
     }
   }
 }

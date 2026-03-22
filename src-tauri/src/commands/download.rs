@@ -2,12 +2,14 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::fs;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use tokio::sync::{RwLock, mpsc, Semaphore};
 use tauri::{AppHandle, Emitter, Manager};
 use serde::{Serialize, Deserialize};
 
 lazy_static::lazy_static! {
     static ref DOWNLOAD_MANAGER: Arc<DownloadManager> = Arc::new(DownloadManager::new());
+    static ref TASK_ID_COUNTER: AtomicU32 = AtomicU32::new(1);
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -155,7 +157,7 @@ pub async fn add_download_task(
     file_name: String,
     save_path: String,
 ) -> Result<DownloadTask, String> {
-    let id = chrono::Utc::now().timestamp_millis() as u32;
+    let id = TASK_ID_COUNTER.fetch_add(1, Ordering::SeqCst);
     
     let task = DownloadTask {
         id,

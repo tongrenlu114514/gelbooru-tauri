@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, watch, computed, nextTick } from 'vue'
-import { onBeforeRouteLeave } from 'vue-router'
+import { onBeforeRouteLeave, useRoute } from 'vue-router'
 import {
   NInput,
   NButton,
@@ -11,17 +11,21 @@ import {
   NSelect,
   NPagination,
   NIcon,
+  NCascader,
   useMessage
 } from 'naive-ui'
-import { ChevronBack, ChevronForward, Close } from '@vicons/ionicons5'
+import { ChevronBack, ChevronForward, Close, HeartOutline } from '@vicons/ionicons5'
 import { useGalleryStore } from '@/stores/gallery'
 import { useDownloadStore } from '@/stores/download'
+import { useFavoriteTagsStore } from '@/stores/favoriteTags'
 import { invoke } from '@tauri-apps/api/core'
 import type { GelbooruPost, GelbooruTag } from '@/types'
 
 const galleryStore = useGalleryStore()
 const downloadStore = useDownloadStore()
+const favoriteTagsStore = useFavoriteTagsStore()
 const message = useMessage()
+const route = useRoute()
 
 const searchInput = ref('')
 const isRestoring = ref(false)
@@ -46,14 +50,29 @@ const tagTypeConfig: Record<string, { label: string; color: string }> = {
   metadata: { label: '元数据', color: '#607d8b' }
 }
 
-// 对 tag 进行分组
-const groupedTags = computed(() => {
+// 作品标签
+const copyrightTags = computed(() => {
+  if (!previewPost.value?.tagList) return []
+  return previewPost.value.tagList.filter(tag => tag.tagType.toLowerCase() === 'copyright')
+})
+
+// 角色标签
+const characterTags = computed(() => {
+  if (!previewPost.value?.tagList) return []
+  return previewPost.value.tagList.filter(tag => tag.tagType.toLowerCase() === 'character')
+})
+
+// 其他标签分组（排除作品和角色）
+const otherGroupedTags = computed(() => {
   if (!previewPost.value?.tagList) return []
   
   const groups: Record<string, { type: string; label: string; color: string; tags: GelbooruTag[] }> = {}
   
   for (const tag of previewPost.value.tagList) {
     const type = tag.tagType.toLowerCase()
+    // 跳过作品和角色标签
+    if (type === 'copyright' || type === 'character') continue
+    
     const config = tagTypeConfig[type] || tagTypeConfig.general
     
     if (!groups[type]) {
@@ -67,12 +86,43 @@ const groupedTags = computed(() => {
     groups[type].tags.push(tag)
   }
   
-  // 按优先级排序：artist > character > copyright > general
-  const order = ['artist', 'character', 'copyright', 'general', 'metadata']
+  // 按优先级排序
+  const order = ['artist', 'general', 'metadata']
   return Object.values(groups).sort((a, b) => {
     return order.indexOf(a.type) - order.indexOf(b.type)
   })
 })
+
+// 收藏作品和角色标签
+async function favoriteCopyrightAndCharacters() {
+  if (!previewPost.value?.tagList) return
+  
+  try {
+    // 先收藏作品标签（作为父标签）
+    for (const tag of copyrightTags.value) {
+      const tagName = tag.text.replace(/\s+/g, '_')
+      await favoriteTagsStore.addParentTag(tagName, 'copyright')
+    }
+    
+    // 再收藏角色标签（作为子标签）
+    for (const copyrightTag of copyrightTags.value) {
+      const parentName = copyrightTag.text.replace(/\s+/g, '_')
+      // 查找父标签
+      const group = favoriteTagsStore.findTagGroup(parentName)
+      if (group) {
+        for (const characterTag of characterTags.value) {
+          const characterName = characterTag.text.replace(/\s+/g, '_')
+          await favoriteTagsStore.addChildTag(characterName, 'character', group.parent.id)
+        }
+      }
+    }
+    
+    message.success('已收藏作品和角色标签')
+  } catch (error) {
+    console.error('Failed to favorite tags:', error)
+    message.error('收藏失败')
+  }
+}
 
 // 格式化数量显示
 function formatCount(count: number): string {
@@ -96,6 +146,74 @@ const ratingOptions = [
   { label: 'Explicit', value: 'rating:explicit' }
 ]
 const selectedRating = ref('')
+
+// 级联选择器选项（作品 -> 角色）
+const cascaderOptions = computed(() => {
+  return favoriteTagsStore.tags
+    .filter(group => group.parent.tagType === 'copyright')
+    .map(group => ({
+      label: group.parent.tag,
+      value: group.parent.tag,
+      children: group.children
+        .filter(child => child.tagType === 'character')
+        .map(child => ({
+          label: child.tag,
+          value: child.tag
+        }))
+    }))
+})
+
+const selectedCascaderValue = ref<string | string[] | null>(null)
+
+// 处理级联选择
+function handleCascaderChange(value: string | string[] | null) {
+  if (!value) return
+  
+  const selectedValue = Array.isArray(value) ? value[value.length - 1] : value
+  if (!selectedValue) return
+  
+  // 查找是否是子节点（角色）
+  let isParentNode = false
+  let parentValue = ''
+  
+  for (const option of cascaderOptions.value) {
+    if (option.value === selectedValue) {
+      // 选中的是父节点（作品）
+      isParentNode = true
+      break
+    }
+    if (option.children) {
+      const child = option.children.find(c => c.value === selectedValue)
+      if (child) {
+        // 选中的是子节点（角色），记录父节点
+        parentValue = option.value
+        break
+      }
+    }
+  }
+  
+  selectedCascaderValue.value = null
+  
+  if (isParentNode) {
+    // 选中的是作品标签，替换搜索条件
+    selectedTags.value = [selectedValue]
+    searchPosts(true)
+  } else {
+    // 选中的是角色标签，追加作品和角色
+    let added = false
+    if (parentValue && !selectedTags.value.includes(parentValue)) {
+      selectedTags.value.push(parentValue)
+      added = true
+    }
+    if (!selectedTags.value.includes(selectedValue)) {
+      selectedTags.value.push(selectedValue)
+      added = true
+    }
+    if (added) {
+      searchPosts(true)
+    }
+  }
+}
 
 async function searchPosts(resetPage = false) {
   // 先把输入框的内容加入标签
@@ -298,6 +416,19 @@ function handleKeydown(e: KeyboardEvent) {
 }
 
 onMounted(() => {
+  // 加载收藏标签
+  favoriteTagsStore.loadTags()
+  
+  // 处理 query 参数（从收藏标签页跳转）
+  if (route.query.tag) {
+    const tag = route.query.tag as string
+    if (!selectedTags.value.includes(tag)) {
+      selectedTags.value.push(tag)
+    }
+    searchPosts(true)
+    return
+  }
+  
   // 尝试恢复页面状态
   const savedState = galleryStore.restorePageState()
   if (savedState) {
@@ -337,6 +468,21 @@ watch([selectedTags, selectedRating], () => {
 
 <template>
   <div class="home-view">
+    <!-- Quick Tag Selector -->
+    <div v-if="cascaderOptions.length > 0" class="quick-tag-selector">
+      <span class="selector-label">快速选择：</span>
+      <n-cascader
+        v-model:value="selectedCascaderValue"
+        :options="cascaderOptions"
+        placeholder="选择作品/角色"
+        check-strategy="all"
+        filterable
+        clearable
+        style="width: 300px"
+        @update:value="handleCascaderChange"
+      />
+    </div>
+    
     <!-- Search Bar -->
     <n-space vertical size="large">
       <n-space>
@@ -456,20 +602,65 @@ watch([selectedTags, selectedRating], () => {
               </n-space>
             </div>
             
+            <!-- 作品和角色标签区域 -->
             <div class="sidebar-tags" v-if="previewPost && previewPost.tagList.length > 0">
-              <div class="tag-group" v-for="group in groupedTags" :key="group.type">
-                <span class="tag-group-label">{{ group.label }}</span>
-                <div class="tag-list">
+              <!-- 作品和角色标签（独立显示） -->
+              <div v-if="copyrightTags.length > 0 || characterTags.length > 0" class="main-tags-section">
+                <div class="main-tags-header">
+                  <span class="main-tags-label">作品/角色</span>
+                  <n-button 
+                    v-if="copyrightTags.length > 0 || characterTags.length > 0"
+                    size="tiny" 
+                    type="primary" 
+                    quaternary
+                    @click="favoriteCopyrightAndCharacters"
+                  >
+                    <template #icon>
+                      <n-icon :component="HeartOutline" size="14" />
+                    </template>
+                    收藏
+                  </n-button>
+                </div>
+                <div class="main-tags-list">
+                  <!-- 作品标签 -->
                   <n-tag
-                    v-for="tag in group.tags"
+                    v-for="tag in copyrightTags"
                     :key="tag.text"
-                    :color="{ color: group.color, textColor: '#fff' }"
-                    class="tag-item"
+                    :color="{ color: tagTypeConfig.copyright.color, textColor: '#fff' }"
+                    class="main-tag copyright-tag"
                     @click="handleTagClick(tag.text)"
                   >
                     {{ tag.text }}
-                    <span class="tag-count" v-if="tag.count > 0">{{ formatCount(tag.count) }}</span>
                   </n-tag>
+                  <!-- 角色标签 -->
+                  <n-tag
+                    v-for="tag in characterTags"
+                    :key="tag.text"
+                    :color="{ color: tagTypeConfig.character.color, textColor: '#fff' }"
+                    class="main-tag character-tag"
+                    @click="handleTagClick(tag.text)"
+                  >
+                    {{ tag.text }}
+                  </n-tag>
+                </div>
+              </div>
+              
+              <!-- 其他标签 -->
+              <div class="other-tags-section" v-if="otherGroupedTags.length > 0">
+                <div class="tag-group" v-for="group in otherGroupedTags" :key="group.type">
+                  <span class="tag-group-label">{{ group.label }}</span>
+                  <div class="tag-list">
+                    <n-tag
+                      v-for="tag in group.tags"
+                      :key="tag.text"
+                      :color="{ color: group.color, textColor: '#fff' }"
+                      class="tag-item"
+                      @click="handleTagClick(tag.text)"
+                    >
+                      {{ tag.text }}
+                      <span class="tag-count" v-if="tag.count > 0">{{ formatCount(tag.count) }}</span>
+                    </n-tag>
+                  </div>
                 </div>
               </div>
             </div>
@@ -489,6 +680,24 @@ watch([selectedTags, selectedRating], () => {
 <style scoped>
 .home-view {
   padding: 0;
+}
+
+.quick-tag-selector {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.selector-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #999;
+  white-space: nowrap;
 }
 
 .post-grid {
@@ -648,6 +857,49 @@ watch([selectedTags, selectedRating], () => {
   padding: 12px 16px;
 }
 
+.main-tags-section {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+}
+
+.main-tags-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.main-tags-label {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+  font-weight: 500;
+}
+
+.main-tags-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.main-tag {
+  cursor: pointer;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+  font-size: 13px;
+  padding: 4px 10px;
+}
+
+.main-tag:hover {
+  transform: scale(1.05);
+  opacity: 0.85;
+}
+
+.other-tags-section {
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 12px;
+}
+
 .sidebar-actions {
   padding: 12px 16px;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
@@ -678,6 +930,13 @@ watch([selectedTags, selectedRating], () => {
 .tag-item {
   cursor: pointer;
   transition: transform 0.15s ease, opacity 0.15s ease;
+  max-width: 150px;
+}
+
+.tag-item :deep(.n-tag__content) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tag-item:hover {

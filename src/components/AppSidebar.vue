@@ -8,7 +8,8 @@ import {
   DownloadOutline,
   ImageOutline,
   SettingsOutline,
-  MenuOutline
+  MenuOutline,
+  HeartOutline
 } from '@vicons/ionicons5'
 import type { MenuOption } from 'naive-ui'
 
@@ -33,6 +34,11 @@ const menuOptions: MenuOption[] = [
     label: '本地图库',
     key: 'gallery',
     icon: renderIcon(ImageOutline)
+  },
+  {
+    label: '收藏标签',
+    key: 'favorite-tags',
+    icon: renderIcon(HeartOutline)
   },
   {
     label: '设置',

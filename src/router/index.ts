@@ -19,6 +19,11 @@ const router = createRouter({
       component: () => import('@/views/Gallery.vue')
     },
     {
+      path: '/favorite-tags',
+      name: 'favorite-tags',
+      component: () => import('@/views/FavoriteTags.vue')
+    },
+    {
       path: '/settings',
       name: 'settings',
       component: () => import('@/views/Settings.vue')

@@ -1,6 +1,6 @@
 # Gelbooru Downloader - Roadmap
 
-**Last Updated:** 2026-04-14
+**Last Updated:** 2026-04-15
 
 ## Project Phases
 
@@ -35,6 +35,13 @@
 - 核心功能有测试覆盖
 - 代码风格统一
 
+**Plans:**
+- [ ] 02-01-PLAN.md - Frontend download store tests (0% coverage -> 60%+)
+- [ ] 02-02-PLAN.md - Frontend gallery store page state tests
+- [ ] 02-03-PLAN.md - Backend database CRUD tests with tempfile
+- [ ] 02-04-PLAN.md - Backend scraper HTML parsing tests
+- [ ] 02-05-PLAN.md - Husky pre-commit hook setup
+
 ### Phase 3: Performance & Reliability
 **Goal:** Improve performance and add reliability features
 
@@ -60,12 +67,18 @@
 | 4.3 | 文档完善 | LOW | README.md |
 | 4.4 | 发布准备 | HIGH | tauri.conf.json |
 
+**Success Criteria:**
+- Schema 版本可追踪
+- 错误信息统一友好
+- 文档完整
+- 可发布版本
+
 ## State
 
 | Phase | Status | Notes |
 |-------|--------|-------|
-| Phase 1 | PLANNED | 执行计划已创建 |
-| Phase 2 | PENDING | 未开始 |
+| Phase 1 | COMPLETED | 4/4 tasks done |
+| Phase 2 | PLANNED | 5 plans created |
 | Phase 3 | PENDING | 未开始 |
 | Phase 4 | PENDING | 未开始 |
 

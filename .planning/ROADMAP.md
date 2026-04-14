@@ -36,11 +36,11 @@
 - 代码风格统一
 
 **Plans:**
-- [ ] 02-01-PLAN.md - Frontend download store tests (0% coverage -> 60%+)
-- [ ] 02-02-PLAN.md - Frontend gallery store page state tests
+3/5 plans executed
+- [x] 02-02-PLAN.md - Frontend gallery store page state tests
 - [ ] 02-03-PLAN.md - Backend database CRUD tests with tempfile
 - [ ] 02-04-PLAN.md - Backend scraper HTML parsing tests
-- [ ] 02-05-PLAN.md - Husky pre-commit hook setup
+- [x] 02-05-PLAN.md - Husky pre-commit hook setup
 
 ### Phase 3: Performance & Reliability
 **Goal:** Improve performance and add reliability features
@@ -78,7 +78,7 @@
 | Phase | Status | Notes |
 |-------|--------|-------|
 | Phase 1 | COMPLETED | 4/4 tasks done |
-| Phase 2 | PLANNED | 5 plans created |
+| Phase 2 | IN PROGRESS | 1/5 plans complete |
 | Phase 3 | PENDING | 未开始 |
 | Phase 4 | PENDING | 未开始 |
 

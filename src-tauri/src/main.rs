@@ -35,18 +35,22 @@ fn main() {
             commands::download::cancel_download,
             commands::download::remove_download_task,
             commands::download::get_download_tasks,
+            commands::download::restore_download_tasks,
             commands::download::clear_completed_tasks,
             commands::download::open_file,
             commands::gallery::get_local_images,
             commands::gallery::delete_image,
             commands::gallery::get_directory_tree,
             commands::gallery::get_directory_images,
+            commands::gallery::get_local_image_base64,
             commands::favorite_tags::get_favorite_tags,
             commands::favorite_tags::add_parent_tag,
             commands::favorite_tags::add_child_tag,
             commands::favorite_tags::remove_favorite_tag,
             commands::favorite_tags::is_tag_favorited,
             commands::favorite_tags::get_child_tags,
+            commands::settings::get_settings,
+            commands::settings::save_settings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

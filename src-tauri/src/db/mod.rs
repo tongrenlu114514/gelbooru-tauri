@@ -19,6 +19,21 @@ pub struct FavoriteTagGroup {
     pub children: Vec<FavoriteTag>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadTaskRecord {
+    pub id: i64,
+    pub post_id: i32,
+    pub file_name: String,
+    pub file_path: String,
+    pub image_url: String,
+    pub status: String,
+    pub progress: f64,
+    pub downloaded_size: i64,
+    pub total_size: i64,
+    pub error_message: Option<String>,
+}
+
 pub struct Database {
     conn: Mutex<Connection>,
 }
@@ -74,6 +89,11 @@ impl Database {
             );
             
             CREATE INDEX IF NOT EXISTS idx_favorite_tags_parent ON favorite_tags(parent_id);
+
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
             "#,
         )?;
         
@@ -224,11 +244,127 @@ impl Database {
         let mut stmt = conn.prepare(
             "SELECT id, tag, tag_type, parent_id FROM favorite_tags WHERE tag = ?1"
         )?;
-        
+
         let result = stmt
             .query_row(rusqlite::params![tag], Self::row_to_favorite_tag)
             .optional()?;
-        
+
         Ok(result)
+    }
+
+    // Settings methods
+    pub fn get_setting(&self, key: &str) -> SqliteResult<Option<String>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT value FROM settings WHERE key = ?1")?;
+        let result = stmt
+            .query_row(rusqlite::params![key], |row| row.get(0))
+            .optional()?;
+        Ok(result)
+    }
+
+    pub fn set_setting(&self, key: &str, value: &str) -> SqliteResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?1, ?2)",
+            rusqlite::params![key, value],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_all_settings(&self) -> SqliteResult<Vec<(String, String)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT key, value FROM settings")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let result: Vec<(String, String)> = rows.filter_map(|r| r.ok()).collect();
+        Ok(result)
+    }
+
+    // Download task persistence methods
+    pub fn save_download_task(&self, task: &DownloadTaskRecord) -> SqliteResult<i64> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            r#"INSERT INTO downloads (id, post_id, file_name, file_path, image_url, status, progress, downloaded_size, total_size, error_message)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+               ON CONFLICT(id) DO UPDATE SET
+                   post_id = excluded.post_id,
+                   file_name = excluded.file_name,
+                   file_path = excluded.file_path,
+                   image_url = excluded.image_url,
+                   status = excluded.status,
+                   progress = excluded.progress,
+                   downloaded_size = excluded.downloaded_size,
+                   total_size = excluded.total_size,
+                   error_message = excluded.error_message"#,
+            rusqlite::params![
+                task.id,
+                task.post_id,
+                task.file_name,
+                task.file_path,
+                task.image_url,
+                task.status,
+                task.progress,
+                task.downloaded_size,
+                task.total_size,
+                task.error_message,
+            ],
+        )?;
+        Ok(task.id)
+    }
+
+    pub fn get_all_download_tasks(&self) -> SqliteResult<Vec<DownloadTaskRecord>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, post_id, file_name, file_path, image_url, status, progress, downloaded_size, total_size, error_message FROM downloads"
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(DownloadTaskRecord {
+                id: row.get(0)?,
+                post_id: row.get(1)?,
+                file_name: row.get(2)?,
+                file_path: row.get(3)?,
+                image_url: row.get(4)?,
+                status: row.get(5)?,
+                progress: row.get(6)?,
+                downloaded_size: row.get(7)?,
+                total_size: row.get(8)?,
+                error_message: row.get(9)?,
+            })
+        })?;
+        let result: Vec<DownloadTaskRecord> = rows.filter_map(|r| r.ok()).collect();
+        Ok(result)
+    }
+
+    pub fn update_download_task_progress(&self, id: i64, status: &str, progress: f64, downloaded_size: i64, total_size: i64) -> SqliteResult<()> {
+        let conn = self.conn.lock().unwrap();
+        let completed_at = if status == "completed" {
+            Some(std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs() as i64)
+        } else {
+            None
+        };
+        conn.execute(
+            "UPDATE downloads SET status = ?1, progress = ?2, downloaded_size = ?3, total_size = ?4, completed_at = ?5 WHERE id = ?6",
+            rusqlite::params![status, progress, downloaded_size, total_size, completed_at, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_download_task_error(&self, id: i64, error_message: &str) -> SqliteResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE downloads SET status = 'failed', error_message = ?1 WHERE id = ?2",
+            rusqlite::params![error_message, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_download_task(&self, id: i64) -> SqliteResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM downloads WHERE id = ?1", rusqlite::params![id])?;
+        Ok(())
     }
 }

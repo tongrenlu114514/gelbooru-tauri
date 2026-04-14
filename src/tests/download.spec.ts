@@ -1,9 +1,15 @@
 /**
- * Download store utility functions unit tests
- * Tests sanitizeFileName, extractTagsByType, generateSavePath
+ * Download store unit tests
+ * Tests both utility functions and store async functions with Tauri mocking
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
+import { createPinia, setActivePinia } from 'pinia';
+import { useDownloadStore } from '@/stores/download';
 import type { GelbooruTag } from '@/types';
+
+// Mocks are set up in setup.ts - we just need to configure them in tests
 
 // Inline the utility functions for testing
 // These are the same functions from download.ts
@@ -257,5 +263,411 @@ describe('generateSavePath', () => {
 
     const result = generateSavePath(meta, basePath);
     expect(result.slice(-4)).toBe('.jpg');
+  });
+});
+
+// Mock settings store
+vi.mock('@/stores/settings', () => ({
+  useSettingsStore: () => ({
+    downloadPath: '/downloads',
+  }),
+}));
+
+describe('useDownloadStore async functions', () => {
+  const mockPostMeta = {
+    postId: 12345,
+    imageUrl: 'https://example.com/image.jpg',
+    posted: '2024-03-22 12:34:56',
+    rating: 'safe',
+    tags: [{ text: 'artist_tag', tagType: 'artist', count: 100 }],
+  };
+
+  const mockTask = {
+    id: 1,
+    postId: 12345,
+    imageUrl: 'https://example.com/image.jpg',
+    fileName: '12345.jpg',
+    savePath: '/downloads/2024-03-22/safe/unknown/12345.jpg',
+    status: 'pending' as const,
+    progress: 0,
+    downloadedSize: 0,
+    totalSize: 0,
+  };
+
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    // Reset mock implementations to default state
+    vi.mocked(invoke).mockReset();
+    vi.mocked(listen).mockReset();
+    vi.mocked(listen).mockResolvedValue(vi.fn());
+  });
+
+  describe('init', () => {
+    it('should call restoreTasks and initListeners', async () => {
+      const mockTasks: (typeof mockTask)[] = [];
+      vi.mocked(invoke).mockResolvedValueOnce(mockTasks);
+      vi.mocked(listen).mockResolvedValueOnce(vi.fn());
+
+      const store = useDownloadStore();
+      await store.init();
+
+      expect(invoke).toHaveBeenCalledWith('restore_download_tasks');
+      expect(listen).toHaveBeenCalledWith('download-progress', expect.any(Function));
+    });
+
+    it('should not reinitialize if already initialized', async () => {
+      const store = useDownloadStore();
+      await store.init();
+      await store.init();
+
+      // Should only call once due to initialized flag
+      expect(listen).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('initListeners', () => {
+    it('should set up download progress listener', async () => {
+      const mockUnlisten = vi.fn();
+      vi.mocked(listen).mockResolvedValueOnce(mockUnlisten);
+
+      const store = useDownloadStore();
+      await store.initListeners();
+
+      expect(listen).toHaveBeenCalledWith('download-progress', expect.any(Function));
+    });
+
+    it('should not re-setup listener if already exists', async () => {
+      const mockUnlisten = vi.fn();
+      vi.mocked(listen).mockResolvedValueOnce(mockUnlisten);
+
+      const store = useDownloadStore();
+      await store.initListeners();
+      await store.initListeners();
+
+      // Should only call listen once
+      expect(listen).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('addTask', () => {
+    it('should create task and auto-start download', async () => {
+      const task: typeof mockTask = { ...mockTask, id: 1 };
+      vi.mocked(invoke)
+        .mockResolvedValueOnce(task) // add_download_task
+        .mockResolvedValueOnce(undefined); // start_download
+
+      const store = useDownloadStore();
+      const result = await store.addTask(mockPostMeta);
+
+      expect(result).toEqual(task);
+      expect(store.tasks).toContainEqual(task);
+      expect(invoke).toHaveBeenCalledWith('start_download', { id: 1 });
+    });
+
+    it('should throw error when invoke fails', async () => {
+      vi.mocked(invoke)
+        .mockResolvedValueOnce(vi.fn()) // initListeners
+        .mockRejectedValueOnce(new Error('Failed to add task'));
+
+      const store = useDownloadStore();
+
+      await expect(store.addTask(mockPostMeta)).rejects.toThrow('Failed to add task');
+    });
+  });
+
+  describe('startDownload', () => {
+    it('should call invoke with correct id', async () => {
+      vi.mocked(invoke).mockResolvedValueOnce(undefined);
+
+      const store = useDownloadStore();
+      await store.startDownload(123);
+
+      expect(invoke).toHaveBeenCalledWith('start_download', { id: 123 });
+    });
+
+    it('should set isDownloading to true on success', async () => {
+      vi.mocked(invoke).mockResolvedValueOnce(undefined);
+
+      const store = useDownloadStore();
+      await store.startDownload(1);
+
+      expect(store.isDownloading).toBe(true);
+    });
+
+    it('should throw error when invoke fails', async () => {
+      vi.mocked(invoke).mockRejectedValueOnce(new Error('Download error'));
+
+      const store = useDownloadStore();
+
+      await expect(store.startDownload(1)).rejects.toThrow('Download error');
+    });
+  });
+
+  describe('pauseDownload', () => {
+    it('should call invoke with correct id', async () => {
+      vi.mocked(invoke).mockResolvedValueOnce(undefined);
+
+      const store = useDownloadStore();
+      await store.pauseDownload(456);
+
+      expect(invoke).toHaveBeenCalledWith('pause_download', { id: 456 });
+    });
+
+    it('should handle error gracefully', async () => {
+      vi.mocked(invoke).mockRejectedValueOnce(new Error('Pause error'));
+
+      const store = useDownloadStore();
+      // Should not throw
+      await expect(store.pauseDownload(1)).resolves.not.toThrow();
+    });
+  });
+
+  describe('resumeDownload', () => {
+    it('should call invoke with correct id', async () => {
+      vi.mocked(invoke).mockResolvedValueOnce(undefined);
+
+      const store = useDownloadStore();
+      await store.resumeDownload(789);
+
+      expect(invoke).toHaveBeenCalledWith('resume_download', { id: 789 });
+    });
+
+    it('should handle error gracefully', async () => {
+      vi.mocked(invoke).mockRejectedValueOnce(new Error('Resume error'));
+
+      const store = useDownloadStore();
+      await expect(store.resumeDownload(1)).resolves.not.toThrow();
+    });
+  });
+
+  describe('cancelDownload', () => {
+    it('should call invoke with correct id', async () => {
+      vi.mocked(invoke).mockResolvedValueOnce(undefined);
+
+      const store = useDownloadStore();
+      await store.cancelDownload(999);
+
+      expect(invoke).toHaveBeenCalledWith('cancel_download', { id: 999 });
+    });
+
+    it('should handle error gracefully', async () => {
+      vi.mocked(invoke).mockRejectedValueOnce(new Error('Cancel error'));
+
+      const store = useDownloadStore();
+      await expect(store.cancelDownload(1)).resolves.not.toThrow();
+    });
+  });
+
+  describe('removeTask', () => {
+    it('should remove task from local array', async () => {
+      vi.mocked(invoke).mockResolvedValueOnce(undefined);
+
+      const store = useDownloadStore();
+      store.tasks.push(mockTask);
+
+      await store.removeTask(1);
+
+      expect(store.tasks).toHaveLength(0);
+      expect(invoke).toHaveBeenCalledWith('remove_download_task', { id: 1 });
+    });
+
+    it('should only remove task with matching id', async () => {
+      vi.mocked(invoke).mockResolvedValueOnce(undefined);
+
+      const store = useDownloadStore();
+      store.tasks.push({ ...mockTask, id: 1 }, { ...mockTask, id: 2 });
+
+      await store.removeTask(1);
+
+      expect(store.tasks).toHaveLength(1);
+      expect(store.tasks[0].id).toBe(2);
+    });
+
+    it('should handle error gracefully', async () => {
+      vi.mocked(invoke).mockRejectedValueOnce(new Error('Remove error'));
+
+      const store = useDownloadStore();
+      store.tasks.push(mockTask);
+
+      await expect(store.removeTask(1)).resolves.not.toThrow();
+    });
+  });
+
+  describe('clearCompleted', () => {
+    it('should filter out completed tasks', async () => {
+      vi.mocked(invoke).mockResolvedValueOnce(undefined);
+
+      const store = useDownloadStore();
+      store.tasks.push(
+        { ...mockTask, id: 1, status: 'completed' as const },
+        { ...mockTask, id: 2, status: 'pending' as const },
+        { ...mockTask, id: 3, status: 'downloading' as const }
+      );
+
+      await store.clearCompleted();
+
+      expect(store.tasks).toHaveLength(2);
+      expect(store.tasks.find((t) => t.id === 2)).toBeDefined();
+      expect(store.tasks.find((t) => t.id === 3)).toBeDefined();
+      expect(store.tasks.find((t) => t.id === 1)).toBeUndefined();
+      expect(invoke).toHaveBeenCalledWith('clear_completed_tasks');
+    });
+
+    it('should handle error gracefully', async () => {
+      vi.mocked(invoke).mockRejectedValueOnce(new Error('Clear error'));
+
+      const store = useDownloadStore();
+      store.tasks.push({ ...mockTask, id: 1, status: 'completed' as const });
+
+      await expect(store.clearCompleted()).resolves.not.toThrow();
+    });
+  });
+
+  describe('fetchTasks', () => {
+    it('should update local tasks array', async () => {
+      const mockTasks = [
+        { ...mockTask, id: 1 },
+        { ...mockTask, id: 2 },
+        { ...mockTask, id: 3 },
+      ];
+      vi.mocked(invoke).mockResolvedValueOnce(mockTasks);
+
+      const store = useDownloadStore();
+      await store.fetchTasks();
+
+      expect(store.tasks).toEqual(mockTasks);
+      expect(invoke).toHaveBeenCalledWith('get_download_tasks');
+    });
+
+    it('should handle error gracefully', async () => {
+      vi.mocked(invoke).mockRejectedValueOnce(new Error('Fetch error'));
+
+      const store = useDownloadStore();
+      await expect(store.fetchTasks()).resolves.not.toThrow();
+    });
+  });
+
+  describe('startAllPending', () => {
+    it('should iterate queue and start each task', async () => {
+      vi.mocked(invoke).mockResolvedValue(undefined);
+
+      const store = useDownloadStore();
+      store.tasks.push(
+        { ...mockTask, id: 1, status: 'pending' as const },
+        { ...mockTask, id: 2, status: 'pending' as const },
+        { ...mockTask, id: 3, status: 'completed' as const }
+      );
+
+      await store.startAllPending();
+
+      expect(invoke).toHaveBeenCalledWith('start_download', { id: 1 });
+      expect(invoke).toHaveBeenCalledWith('start_download', { id: 2 });
+      expect(invoke).not.toHaveBeenCalledWith('start_download', { id: 3 });
+    });
+
+    it('should not start anything when queue is empty', async () => {
+      const store = useDownloadStore();
+      store.tasks.push({ ...mockTask, id: 1, status: 'completed' as const });
+
+      await store.startAllPending();
+
+      expect(invoke).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('pauseAllDownloading', () => {
+    it('should iterate downloading and pause each task', async () => {
+      vi.mocked(invoke).mockResolvedValue(undefined);
+
+      const store = useDownloadStore();
+      store.tasks.push(
+        { ...mockTask, id: 1, status: 'downloading' as const },
+        { ...mockTask, id: 2, status: 'downloading' as const },
+        { ...mockTask, id: 3, status: 'pending' as const }
+      );
+
+      await store.pauseAllDownloading();
+
+      expect(invoke).toHaveBeenCalledWith('pause_download', { id: 1 });
+      expect(invoke).toHaveBeenCalledWith('pause_download', { id: 2 });
+      expect(invoke).not.toHaveBeenCalledWith('pause_download', { id: 3 });
+    });
+
+    it('should not pause anything when no tasks are downloading', async () => {
+      const store = useDownloadStore();
+      store.tasks.push({ ...mockTask, id: 1, status: 'pending' as const });
+
+      await store.pauseAllDownloading();
+
+      expect(invoke).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('computed properties', () => {
+    it('should correctly filter queue (pending tasks)', () => {
+      const store = useDownloadStore();
+      store.tasks.push(
+        { ...mockTask, id: 1, status: 'pending' as const },
+        { ...mockTask, id: 2, status: 'downloading' as const },
+        { ...mockTask, id: 3, status: 'completed' as const }
+      );
+
+      expect(store.queue).toHaveLength(1);
+      expect(store.queue[0].id).toBe(1);
+    });
+
+    it('should correctly filter downloading tasks', () => {
+      const store = useDownloadStore();
+      store.tasks.push(
+        { ...mockTask, id: 1, status: 'pending' as const },
+        { ...mockTask, id: 2, status: 'downloading' as const },
+        { ...mockTask, id: 3, status: 'completed' as const }
+      );
+
+      expect(store.downloading).toHaveLength(1);
+      expect(store.downloading[0].id).toBe(2);
+    });
+
+    it('should correctly filter completed tasks', () => {
+      const store = useDownloadStore();
+      store.tasks.push(
+        { ...mockTask, id: 1, status: 'pending' as const },
+        { ...mockTask, id: 2, status: 'downloading' as const },
+        { ...mockTask, id: 3, status: 'completed' as const }
+      );
+
+      expect(store.completed).toHaveLength(1);
+      expect(store.completed[0].id).toBe(3);
+    });
+
+    it('should correctly filter failed tasks', () => {
+      const store = useDownloadStore();
+      store.tasks.push(
+        { ...mockTask, id: 1, status: 'failed' as const },
+        { ...mockTask, id: 2, status: 'completed' as const },
+        { ...mockTask, id: 3, status: 'pending' as const }
+      );
+
+      expect(store.failed).toHaveLength(1);
+      expect(store.failed[0].id).toBe(1);
+    });
+  });
+
+  describe('openFile', () => {
+    it('should call invoke with correct path', async () => {
+      vi.mocked(invoke).mockResolvedValueOnce(undefined);
+
+      const store = useDownloadStore();
+      await store.openFile('/path/to/file.jpg');
+
+      expect(invoke).toHaveBeenCalledWith('open_file', { path: '/path/to/file.jpg' });
+    });
+
+    it('should handle error gracefully', async () => {
+      vi.mocked(invoke).mockRejectedValueOnce(new Error('Open error'));
+
+      const store = useDownloadStore();
+      await expect(store.openFile('/path/to/file.jpg')).resolves.not.toThrow();
+    });
   });
 });

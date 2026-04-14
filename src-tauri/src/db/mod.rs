@@ -38,6 +38,8 @@ pub struct Database {
     conn: Mutex<Connection>,
 }
 
+// These functions are primarily used by tests - allow dead_code at module level
+#[allow(dead_code)]
 impl Database {
     pub fn new(app_data_dir: &str) -> SqliteResult<Self> {
         let db_path = PathBuf::from(app_data_dir).join("gelbooru.db");

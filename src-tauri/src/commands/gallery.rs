@@ -1,14 +1,13 @@
+use crate::commands::favorite_tags::DbState;
+use serde::Serialize;
 use std::fs;
 use std::path::PathBuf;
-use serde::Serialize;
-use crate::commands::favorite_tags::DbState;
 use tauri::State;
 
 /// Sanitize a path by removing dangerous components
 pub(crate) fn sanitize_path(path: &str) -> String {
     // Normalize path separators and remove null bytes
-    path.replace('\0', "")
-        .replace('\\', "/")
+    path.replace('\0', "").replace('\\', "/")
 }
 
 /// Validate a path for security issues (path traversal, etc.)
@@ -41,7 +40,8 @@ pub(crate) fn validate_path_within_base(path: &str, base_dir: &str) -> Result<Pa
     // In this case, we check that the normalized path doesn't escape the base
     if !path_buf.exists() {
         // Normalize both paths
-        let canonical_base = base_buf.canonicalize()
+        let canonical_base = base_buf
+            .canonicalize()
             .map_err(|e| format!("无法访问基础目录: {}", e))?;
 
         // For non-existent paths, construct the expected canonical path
@@ -52,7 +52,9 @@ pub(crate) fn validate_path_within_base(path: &str, base_dir: &str) -> Result<Pa
         let expected_str = expected_path.to_string_lossy();
         let base_str = canonical_base.to_string_lossy();
 
-        if !expected_str.starts_with(&*base_str) && !expected_str.starts_with(&format!("{}/", base_str)) {
+        if !expected_str.starts_with(&*base_str)
+            && !expected_str.starts_with(&format!("{}/", base_str))
+        {
             return Err("路径超出允许范围".to_string());
         }
 
@@ -60,18 +62,21 @@ pub(crate) fn validate_path_within_base(path: &str, base_dir: &str) -> Result<Pa
     }
 
     // For existing paths, canonicalize and check containment
-    let canonical_path = path_buf.canonicalize()
+    let canonical_path = path_buf
+        .canonicalize()
         .map_err(|e| format!("无法访问路径: {}", e))?;
 
-    let canonical_base = base_buf.canonicalize()
+    let canonical_base = base_buf
+        .canonicalize()
         .map_err(|e| format!("无法访问基础目录: {}", e))?;
 
     let canonical_path_str = canonical_path.to_string_lossy();
     let canonical_base_str = canonical_base.to_string_lossy();
 
     // Check that the canonical path starts with the base directory
-    if !canonical_path_str.starts_with(&*canonical_base_str) &&
-       !canonical_path_str.starts_with(&format!("{}/", canonical_base_str)) {
+    if !canonical_path_str.starts_with(&*canonical_base_str)
+        && !canonical_path_str.starts_with(&format!("{}/", canonical_base_str))
+    {
         return Err("路径超出允许范围".to_string());
     }
 
@@ -122,16 +127,14 @@ pub struct PaginatedImages {
 }
 
 #[tauri::command]
-pub async fn delete_image(
-    db: State<'_, DbState>,
-    path: String,
-) -> Result<(), String> {
+pub async fn delete_image(db: State<'_, DbState>, path: String) -> Result<(), String> {
     // Get download directory from settings
-    let download_dir = db.0.lock()
-        .map_err(|e| e.to_string())?
-        .get_setting("download_path")
-        .map_err(|e| e.to_string())?
-        .unwrap_or_default();
+    let download_dir =
+        db.0.lock()
+            .map_err(|e| e.to_string())?
+            .get_setting("download_path")
+            .map_err(|e| e.to_string())?
+            .unwrap_or_default();
 
     // Validate path is within download directory
     let path_buf = validate_path_within_base(&path, &download_dir)?;
@@ -146,7 +149,9 @@ pub async fn delete_image(
 
     tokio::task::spawn_blocking(move || {
         fs::remove_file(&path_buf).map_err(|e| format!("删除失败: {}", e))
-    }).await.map_err(|e| e.to_string())?
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -157,11 +162,12 @@ pub async fn get_local_images(
     page_size: Option<usize>,
 ) -> Result<PaginatedImages, String> {
     // Get download path from settings, fallback to empty string
-    let db_path = db.0.lock()
-        .map_err(|e| e.to_string())?
-        .get_setting("download_path")
-        .map_err(|e| e.to_string())?
-        .unwrap_or_default();
+    let db_path =
+        db.0.lock()
+            .map_err(|e| e.to_string())?
+            .get_setting("download_path")
+            .map_err(|e| e.to_string())?
+            .unwrap_or_default();
 
     // Validate user-provided path if given
     let path_str = if let Some(ref user_path) = folder_path {
@@ -227,7 +233,7 @@ pub async fn get_local_images(
             .skip(skip)
             .take(page_size)
             .map(|(path, _)| {
-                let name = path.rsplit(|c| c == '/' || c == '\\').next().unwrap_or(&path).to_string();
+                let name = path.rsplit(['/', '\\']).next().unwrap_or(&path).to_string();
                 ImageInfo { path, name }
             })
             .collect();
@@ -237,7 +243,9 @@ pub async fn get_local_images(
             total,
             has_more: skip + page_size < total,
         }
-    }).await.map_err(|e| e.to_string())?;
+    })
+    .await
+    .map_err(|e| e.to_string())?;
 
     Ok(result)
 }
@@ -248,11 +256,12 @@ pub async fn get_directory_tree(
     folder_path: Option<String>,
 ) -> Result<Vec<TreeNode>, String> {
     // Get download path from settings, fallback to empty string
-    let db_path = db.0.lock()
-        .map_err(|e| e.to_string())?
-        .get_setting("download_path")
-        .map_err(|e| e.to_string())?
-        .unwrap_or_default();
+    let db_path =
+        db.0.lock()
+            .map_err(|e| e.to_string())?
+            .get_setting("download_path")
+            .map_err(|e| e.to_string())?
+            .unwrap_or_default();
 
     // Validate user-provided path if given
     let path_str = if let Some(ref user_path) = folder_path {
@@ -272,7 +281,7 @@ pub async fn get_directory_tree(
             return Vec::new();
         }
 
-        fn build_tree(dir: &PathBuf, base_path: &str) -> Option<TreeNode> {
+        fn build_tree(dir: &PathBuf, _base_path: &str) -> Option<TreeNode> {
             if !dir.exists() || !dir.is_dir() {
                 return None;
             }
@@ -289,7 +298,7 @@ pub async fn get_directory_tree(
                     let entry_path = entry.path();
 
                     if entry_path.is_dir() {
-                        if let Some(child_node) = build_tree(&entry_path, base_path) {
+                        if let Some(child_node) = build_tree(&entry_path, _base_path) {
                             image_count += child_node.image_count;
                             if first_image.is_none() {
                                 first_image = child_node.thumbnail.clone();
@@ -312,7 +321,8 @@ pub async fn get_directory_tree(
                 return None;
             }
 
-            let dir_name = dir.file_name()
+            let dir_name = dir
+                .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| dir.to_string_lossy().to_string());
 
@@ -324,7 +334,11 @@ pub async fn get_directory_tree(
                 path: relative_path,
                 is_leaf: children.is_empty(),
                 image_count,
-                children: if children.is_empty() { None } else { Some(children) },
+                children: if children.is_empty() {
+                    None
+                } else {
+                    Some(children)
+                },
                 thumbnail: first_image,
             })
         }
@@ -345,15 +359,15 @@ pub async fn get_directory_tree(
         }
 
         result
-    }).await.map_err(|e| e.to_string())?;
+    })
+    .await
+    .map_err(|e| e.to_string())?;
 
     Ok(result)
 }
 
 #[tauri::command]
-pub async fn get_directory_images(
-    dir_path: String,
-) -> Result<DirectoryImages, String> {
+pub async fn get_directory_images(dir_path: String) -> Result<DirectoryImages, String> {
     // Validate path for security
     validate_path(&dir_path)?;
 
@@ -383,7 +397,11 @@ pub async fn get_directory_images(
                     let mut sub_image_count = 0usize;
                     let mut first_image: Option<String> = None;
 
-                    fn count_images_in_dir(dir: &PathBuf, count: &mut usize, first: &mut Option<String>) {
+                    fn count_images_in_dir(
+                        dir: &PathBuf,
+                        count: &mut usize,
+                        first: &mut Option<String>,
+                    ) {
                         if let Ok(entries) = fs::read_dir(dir) {
                             for entry in entries.filter_map(|e| e.ok()) {
                                 let p = entry.path();
@@ -391,7 +409,8 @@ pub async fn get_directory_images(
                                     count_images_in_dir(&p, count, first);
                                 } else if let Some(ext) = p.extension() {
                                     let ext = ext.to_string_lossy().to_lowercase();
-                                    if ["jpg", "jpeg", "png", "gif", "webp"].contains(&ext.as_str()) {
+                                    if ["jpg", "jpeg", "png", "gif", "webp"].contains(&ext.as_str())
+                                    {
                                         *count += 1;
                                         if first.is_none() {
                                             *first = Some(p.to_string_lossy().to_string());
@@ -405,7 +424,8 @@ pub async fn get_directory_images(
                     count_images_in_dir(&entry_path, &mut sub_image_count, &mut first_image);
 
                     if sub_image_count > 0 {
-                        let dir_name = entry_path.file_name()
+                        let dir_name = entry_path
+                            .file_name()
                             .map(|n| n.to_string_lossy().to_string())
                             .unwrap_or_else(|| "未命名".to_string());
 
@@ -424,7 +444,8 @@ pub async fn get_directory_images(
                                 .ok()
                                 .and_then(|m| m.modified().ok())
                                 .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-                            images_with_time.push((entry_path.to_string_lossy().to_string(), mtime));
+                            images_with_time
+                                .push((entry_path.to_string_lossy().to_string(), mtime));
                         }
                     }
                 }
@@ -436,15 +457,21 @@ pub async fn get_directory_images(
         let images: Vec<ImageInfo> = images_with_time
             .into_iter()
             .map(|(path, _)| {
-                let name = path.rsplit(|c| c == '/' || c == '\\').next().unwrap_or(&path).to_string();
+                let name = path.rsplit(['/', '\\']).next().unwrap_or(&path).to_string();
                 ImageInfo { path, name }
             })
             .collect();
 
         let total = images.len();
 
-        DirectoryImages { subdirs, images, total }
-    }).await.map_err(|e| e.to_string())?;
+        DirectoryImages {
+            subdirs,
+            images,
+            total,
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?;
 
     Ok(result)
 }
@@ -456,11 +483,12 @@ pub async fn get_local_image_base64(
     path: String,
 ) -> Result<String, String> {
     // Get download directory from settings
-    let download_dir = db.0.lock()
-        .map_err(|e| e.to_string())?
-        .get_setting("download_path")
-        .map_err(|e| e.to_string())?
-        .unwrap_or_default();
+    let download_dir =
+        db.0.lock()
+            .map_err(|e| e.to_string())?
+            .get_setting("download_path")
+            .map_err(|e| e.to_string())?
+            .unwrap_or_default();
 
     // Validate path is within download directory
     let path_buf = validate_path_within_base(&path, &download_dir)?;
@@ -475,8 +503,7 @@ pub async fn get_local_image_base64(
         }
 
         // 读取文件内容
-        let bytes = fs::read(&path_buf)
-            .map_err(|e| format!("读取文件失败: {}", e))?;
+        let bytes = fs::read(&path_buf).map_err(|e| format!("读取文件失败: {}", e))?;
 
         // 检测图片类型
         let content_type = if let Some(ext) = path_buf.extension() {
@@ -495,7 +522,9 @@ pub async fn get_local_image_base64(
         let base64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes);
 
         Ok(format!("data:{};base64,{}", content_type, base64))
-    }).await.map_err(|e| e.to_string())?;
+    })
+    .await
+    .map_err(|e| e.to_string())?;
 
     result
 }
@@ -517,12 +546,18 @@ mod tests {
 
     #[test]
     fn sanitize_path_preserves_normal_path() {
-        assert_eq!(sanitize_path("/normal/path/to/file.png"), "/normal/path/to/file.png");
+        assert_eq!(
+            sanitize_path("/normal/path/to/file.png"),
+            "/normal/path/to/file.png"
+        );
     }
 
     #[test]
     fn sanitize_path_handles_mixed_separators() {
-        assert_eq!(sanitize_path("C:\\users\\test/path\\file.jpg"), "C:/users/test/path/file.jpg");
+        assert_eq!(
+            sanitize_path("C:\\users\\test/path\\file.jpg"),
+            "C:/users/test/path/file.jpg"
+        );
     }
 
     #[rstest]
@@ -537,7 +572,11 @@ mod tests {
     fn validate_path_traversal_detection(#[case] path: &str, #[case] should_pass: bool) {
         let result = validate_path(path);
         if should_pass {
-            assert!(result.is_ok(), "Expected path '{path}' to be valid, got: {:?}", result);
+            assert!(
+                result.is_ok(),
+                "Expected path '{path}' to be valid, got: {:?}",
+                result
+            );
         } else {
             assert!(result.is_err(), "Expected path '{path}' to be invalid");
         }

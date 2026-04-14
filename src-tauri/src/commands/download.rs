@@ -1,15 +1,15 @@
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::fs;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
-use tokio::sync::{RwLock, mpsc, Semaphore};
-use tauri::{AppHandle, Emitter, Manager, State};
-use serde::{Serialize, Deserialize};
-use crate::commands::gelbooru::HTTP_CLIENT;
 use crate::commands::favorite_tags::DbState;
-use crate::db::DownloadTaskRecord;
 use crate::commands::gallery::validate_path_within_base;
+use crate::commands::gelbooru::HTTP_CLIENT;
+use crate::db::DownloadTaskRecord;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::fs;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
+use tauri::{AppHandle, Emitter, Manager, State};
+use tokio::sync::{mpsc, RwLock, Semaphore};
 
 lazy_static::lazy_static! {
     static ref DOWNLOAD_MANAGER: Arc<DownloadManager> = Arc::new(DownloadManager::new());
@@ -230,7 +230,9 @@ pub async fn start_download(
     _db: State<'_, DbState>,
     id: u32,
 ) -> Result<(), String> {
-    let task = DOWNLOAD_MANAGER.get_task(id).await
+    let task = DOWNLOAD_MANAGER
+        .get_task(id)
+        .await
         .ok_or("Task not found")?;
 
     if task.status != DownloadStatus::Pending && task.status != DownloadStatus::Paused {
@@ -249,8 +251,19 @@ pub async fn start_download(
         DOWNLOAD_MANAGER.add_cancel_token(id, cancel_tx).await;
 
         // 更新状态为下载中
-        DOWNLOAD_MANAGER.update_task_status(id, DownloadStatus::Downloading).await;
-        emit_progress(&app_clone, id, task_clone.post_id, "downloading", 0.0, 0, 0, None);
+        DOWNLOAD_MANAGER
+            .update_task_status(id, DownloadStatus::Downloading)
+            .await;
+        emit_progress(
+            &app_clone,
+            id,
+            task_clone.post_id,
+            "downloading",
+            0.0,
+            0,
+            0,
+            None,
+        );
         persist_progress_async(&app_clone, id as i64, "downloading", 0.0, 0, 0).await;
 
         // 创建保存目录
@@ -260,7 +273,16 @@ pub async fn start_download(
                 if let Err(e) = fs::create_dir_all(parent) {
                     let err_msg = format!("Failed to create directory: {}", e);
                     DOWNLOAD_MANAGER.set_task_error(id, err_msg.clone()).await;
-                    emit_progress(&app_clone, id, task_clone.post_id, "failed", 0.0, 0, 0, Some(err_msg.clone()));
+                    emit_progress(
+                        &app_clone,
+                        id,
+                        task_clone.post_id,
+                        "failed",
+                        0.0,
+                        0,
+                        0,
+                        Some(err_msg.clone()),
+                    );
                     persist_error_async(&app_clone, id as i64, &err_msg).await;
                     DOWNLOAD_MANAGER.remove_cancel_token(id).await;
                     return;
@@ -278,7 +300,16 @@ pub async fn start_download(
             Err(e) => {
                 let err_msg = format!("Request failed: {}", e);
                 DOWNLOAD_MANAGER.set_task_error(id, err_msg.clone()).await;
-                emit_progress(&app_clone, id, task_clone.post_id, "failed", 0.0, 0, 0, Some(err_msg.clone()));
+                emit_progress(
+                    &app_clone,
+                    id,
+                    task_clone.post_id,
+                    "failed",
+                    0.0,
+                    0,
+                    0,
+                    Some(err_msg.clone()),
+                );
                 persist_error_async(&app_clone, id as i64, &err_msg).await;
                 DOWNLOAD_MANAGER.remove_cancel_token(id).await;
                 return;
@@ -294,7 +325,16 @@ pub async fn start_download(
             Err(e) => {
                 let err_msg = format!("Failed to create file: {}", e);
                 DOWNLOAD_MANAGER.set_task_error(id, err_msg.clone()).await;
-                emit_progress(&app_clone, id, task_clone.post_id, "failed", 0.0, 0, 0, Some(err_msg.clone()));
+                emit_progress(
+                    &app_clone,
+                    id,
+                    task_clone.post_id,
+                    "failed",
+                    0.0,
+                    0,
+                    0,
+                    Some(err_msg.clone()),
+                );
                 persist_error_async(&app_clone, id as i64, &err_msg).await;
                 DOWNLOAD_MANAGER.remove_cancel_token(id).await;
                 return;
@@ -311,10 +351,23 @@ pub async fn start_download(
             // 检查是否取消
             if cancel_rx.try_recv().is_ok() {
                 // 暂停状态 - 保留临时文件
-                DOWNLOAD_MANAGER.update_task_status(id, DownloadStatus::Paused).await;
-                emit_progress(&app_clone, id, task_clone.post_id, "paused",
-                    if total_size > 0 { (downloaded as f32 / total_size as f32) * 100.0 } else { 0.0 },
-                    downloaded, total_size, None);
+                DOWNLOAD_MANAGER
+                    .update_task_status(id, DownloadStatus::Paused)
+                    .await;
+                emit_progress(
+                    &app_clone,
+                    id,
+                    task_clone.post_id,
+                    "paused",
+                    if total_size > 0 {
+                        (downloaded as f32 / total_size as f32) * 100.0
+                    } else {
+                        0.0
+                    },
+                    downloaded,
+                    total_size,
+                    None,
+                );
                 DOWNLOAD_MANAGER.remove_cancel_token(id).await;
                 return;
             }
@@ -324,7 +377,16 @@ pub async fn start_download(
                     if let Err(e) = file.write_all(&chunk) {
                         let err_msg = format!("Write failed: {}", e);
                         DOWNLOAD_MANAGER.set_task_error(id, err_msg.clone()).await;
-                        emit_progress(&app_clone, id, task_clone.post_id, "failed", 0.0, 0, 0, Some(err_msg.clone()));
+                        emit_progress(
+                            &app_clone,
+                            id,
+                            task_clone.post_id,
+                            "failed",
+                            0.0,
+                            0,
+                            0,
+                            Some(err_msg.clone()),
+                        );
                         persist_error_async(&app_clone, id as i64, &err_msg).await;
                         DOWNLOAD_MANAGER.remove_cancel_token(id).await;
                         let _ = fs::remove_file(&temp_path);
@@ -338,19 +400,46 @@ pub async fn start_download(
                         0.0
                     };
 
-                    DOWNLOAD_MANAGER.update_task_progress(id, progress, downloaded, total_size).await;
+                    DOWNLOAD_MANAGER
+                        .update_task_progress(id, progress, downloaded, total_size)
+                        .await;
 
                     // 每 100KB 发送一次进度更新
                     if downloaded % (100 * 1024) < chunk.len() as u64 || downloaded == total_size {
-                        emit_progress(&app_clone, id, task_clone.post_id, "downloading",
-                            progress, downloaded, total_size, None);
-                        persist_progress_async(&app_clone, id as i64, "downloading", progress, downloaded, total_size).await;
+                        emit_progress(
+                            &app_clone,
+                            id,
+                            task_clone.post_id,
+                            "downloading",
+                            progress,
+                            downloaded,
+                            total_size,
+                            None,
+                        );
+                        persist_progress_async(
+                            &app_clone,
+                            id as i64,
+                            "downloading",
+                            progress,
+                            downloaded,
+                            total_size,
+                        )
+                        .await;
                     }
                 }
                 Err(e) => {
                     let err_msg = format!("Stream error: {}", e);
                     DOWNLOAD_MANAGER.set_task_error(id, err_msg.clone()).await;
-                    emit_progress(&app_clone, id, task_clone.post_id, "failed", 0.0, 0, 0, Some(err_msg.clone()));
+                    emit_progress(
+                        &app_clone,
+                        id,
+                        task_clone.post_id,
+                        "failed",
+                        0.0,
+                        0,
+                        0,
+                        Some(err_msg.clone()),
+                    );
                     persist_error_async(&app_clone, id as i64, &err_msg).await;
                     DOWNLOAD_MANAGER.remove_cancel_token(id).await;
                     let _ = fs::remove_file(&temp_path);
@@ -363,17 +452,47 @@ pub async fn start_download(
         if let Err(e) = fs::rename(&temp_path, &save_path) {
             let err_msg = format!("Rename failed: {}", e);
             DOWNLOAD_MANAGER.set_task_error(id, err_msg.clone()).await;
-            emit_progress(&app_clone, id, task_clone.post_id, "failed", 0.0, 0, 0, Some(err_msg.clone()));
+            emit_progress(
+                &app_clone,
+                id,
+                task_clone.post_id,
+                "failed",
+                0.0,
+                0,
+                0,
+                Some(err_msg.clone()),
+            );
             persist_error_async(&app_clone, id as i64, &err_msg).await;
             DOWNLOAD_MANAGER.remove_cancel_token(id).await;
             return;
         }
 
         // 更新状态为完成
-        DOWNLOAD_MANAGER.update_task_status(id, DownloadStatus::Completed).await;
-        DOWNLOAD_MANAGER.update_task_progress(id, 100.0, downloaded, total_size).await;
-        emit_progress(&app_clone, id, task_clone.post_id, "completed", 100.0, downloaded, total_size, None);
-        persist_progress_async(&app_clone, id as i64, "completed", 100.0, downloaded, total_size).await;
+        DOWNLOAD_MANAGER
+            .update_task_status(id, DownloadStatus::Completed)
+            .await;
+        DOWNLOAD_MANAGER
+            .update_task_progress(id, 100.0, downloaded, total_size)
+            .await;
+        emit_progress(
+            &app_clone,
+            id,
+            task_clone.post_id,
+            "completed",
+            100.0,
+            downloaded,
+            total_size,
+            None,
+        );
+        persist_progress_async(
+            &app_clone,
+            id as i64,
+            "completed",
+            100.0,
+            downloaded,
+            total_size,
+        )
+        .await;
         DOWNLOAD_MANAGER.remove_cancel_token(id).await;
     });
 
@@ -382,7 +501,9 @@ pub async fn start_download(
 
 #[tauri::command]
 pub async fn pause_download(id: u32) -> Result<(), String> {
-    let task = DOWNLOAD_MANAGER.get_task(id).await
+    let task = DOWNLOAD_MANAGER
+        .get_task(id)
+        .await
         .ok_or("Task not found")?;
 
     if task.status != DownloadStatus::Downloading {
@@ -405,7 +526,9 @@ pub async fn resume_download(
 #[tauri::command]
 pub async fn cancel_download(id: u32) -> Result<(), String> {
     DOWNLOAD_MANAGER.cancel_task(id).await;
-    DOWNLOAD_MANAGER.update_task_status(id, DownloadStatus::Cancelled).await;
+    DOWNLOAD_MANAGER
+        .update_task_status(id, DownloadStatus::Cancelled)
+        .await;
     Ok(())
 }
 
@@ -426,7 +549,8 @@ pub async fn restore_download_tasks(db: State<'_, DbState>) -> Result<Vec<Downlo
     // Get all tasks from database (drop lock before await)
     let records = {
         let database = db.0.lock().map_err(|e| e.to_string())?;
-        database.get_all_download_tasks()
+        database
+            .get_all_download_tasks()
             .map_err(|e| format!("Failed to load download tasks: {}", e))?
     };
 
@@ -458,6 +582,7 @@ pub async fn clear_completed_tasks() -> Result<(), String> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_progress(
     app: &AppHandle,
     id: u32,
@@ -500,27 +625,21 @@ async fn persist_progress_async(
     );
 }
 
-async fn persist_error_async(
-    app: &AppHandle,
-    id: i64,
-    error: &str,
-) {
+async fn persist_error_async(app: &AppHandle, id: i64, error: &str) {
     let db = app.state::<DbState>();
     let database = db.0.lock().unwrap();
     let _ = database.update_download_task_error(id, error);
 }
 
 #[tauri::command]
-pub async fn open_file(
-    db: State<'_, DbState>,
-    path: String,
-) -> Result<(), String> {
+pub async fn open_file(db: State<'_, DbState>, path: String) -> Result<(), String> {
     // Get download directory from settings
-    let download_dir = db.0.lock()
-        .map_err(|e| e.to_string())?
-        .get_setting("download_path")
-        .map_err(|e| e.to_string())?
-        .unwrap_or_default();
+    let download_dir =
+        db.0.lock()
+            .map_err(|e| e.to_string())?
+            .get_setting("download_path")
+            .map_err(|e| e.to_string())?
+            .unwrap_or_default();
 
     // Validate path is within download directory
     let path = validate_path_within_base(&path, &download_dir)?;

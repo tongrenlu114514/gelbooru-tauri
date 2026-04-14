@@ -1,4 +1,4 @@
-use reqwest::{Client, cookie::Jar, Response};
+use reqwest::{cookie::Jar, Client, Response};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -14,14 +14,17 @@ impl HttpClient {
         let jar = Arc::new(Jar::default());
         // No default proxy - will be configured from settings
         let client = Self::build_client(&jar, None)?;
-        
-        Ok(Self { 
-            client: RwLock::new(client), 
+
+        Ok(Self {
+            client: RwLock::new(client),
             jar,
         })
     }
-    
-    fn build_client(jar: &Arc<Jar>, proxy_url: Option<&str>) -> Result<Client, Box<dyn std::error::Error>> {
+
+    fn build_client(
+        jar: &Arc<Jar>,
+        proxy_url: Option<&str>,
+    ) -> Result<Client, Box<dyn std::error::Error>> {
         let mut builder = Client::builder()
             .user_agent(USER_AGENT)
             .cookie_provider(jar.clone())
@@ -29,7 +32,7 @@ impl HttpClient {
             .redirect(reqwest::redirect::Policy::limited(10))
             .timeout(std::time::Duration::from_secs(60))
             .connect_timeout(std::time::Duration::from_secs(30));
-        
+
         if let Some(proxy) = proxy_url {
             if !proxy.is_empty() {
                 if let Ok(proxy_uri) = reqwest::Url::parse(proxy) {
@@ -38,28 +41,29 @@ impl HttpClient {
                 }
             }
         }
-        
+
         Ok(builder.build()?)
     }
-    
-    pub async fn set_proxy(&self, proxy_url: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
+
+    pub async fn set_proxy(
+        &self,
+        proxy_url: Option<String>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let new_client = Self::build_client(&self.jar, proxy_url.as_deref())?;
         *self.client.write().await = new_client;
         println!("[INFO] Proxy updated: {:?}", proxy_url);
         Ok(())
     }
-    
+
     pub async fn get(&self, url: &str) -> Result<String, reqwest::Error> {
-        self.client.read().await
-            .get(url)
-            .send()
-            .await?
-            .text()
-            .await
+        self.client.read().await.get(url).send().await?.text().await
     }
-    
+
+    #[allow(dead_code)]
     pub async fn get_bytes(&self, url: &str) -> Result<Vec<u8>, reqwest::Error> {
-        self.client.read().await
+        self.client
+            .read()
+            .await
             .get(url)
             .send()
             .await?
@@ -67,9 +71,15 @@ impl HttpClient {
             .await
             .map(|b| b.to_vec())
     }
-    
-    pub async fn get_image_with_referer(&self, url: &str, referer: &str) -> Result<Vec<u8>, reqwest::Error> {
-        self.client.read().await
+
+    pub async fn get_image_with_referer(
+        &self,
+        url: &str,
+        referer: &str,
+    ) -> Result<Vec<u8>, reqwest::Error> {
+        self.client
+            .read()
+            .await
             .get(url)
             .header("Referer", referer)
             .send()
@@ -78,23 +88,33 @@ impl HttpClient {
             .await
             .map(|b| b.to_vec())
     }
-    
-    pub async fn download_image(&self, url: &str, referer: &str) -> Result<Response, reqwest::Error> {
-        self.client.read().await
+
+    pub async fn download_image(
+        &self,
+        url: &str,
+        referer: &str,
+    ) -> Result<Response, reqwest::Error> {
+        self.client
+            .read()
+            .await
             .get(url)
             .header("Referer", referer)
-            .header("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
+            .header(
+                "Accept",
+                "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+            )
             .header("Accept-Language", "en-US,en;q=0.9")
             .send()
             .await
     }
-    
+
+    #[allow(dead_code)]
     pub fn load_cookies(&self, json_path: &str) -> Result<(), Box<dyn std::error::Error>> {
         // Load cookies from JSON file and add to jar
         if std::path::Path::new(json_path).exists() {
             let content = std::fs::read_to_string(json_path)?;
             let cookies: Vec<serde_json::Value> = serde_json::from_str(&content)?;
-            
+
             for cookie in cookies {
                 // Parse cookie and add to jar
                 if let (Some(name), Some(value), Some(domain)) = (

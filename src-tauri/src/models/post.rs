@@ -1,7 +1,7 @@
-use serde::{Deserialize, Serialize};
 use super::GelbooruTag;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GelbooruPostStatistics {
     pub size: String,
@@ -9,22 +9,8 @@ pub struct GelbooruPostStatistics {
     pub posted: String,
     pub source: String,
     pub score: i32,
-    pub image: String,      // 原图 URL（用于下载）
-    pub sample: String,     // 预览图 URL（用于显示）
-}
-
-impl Default for GelbooruPostStatistics {
-    fn default() -> Self {
-        Self {
-            size: String::new(),
-            rating: String::new(),
-            posted: String::new(),
-            source: String::new(),
-            score: 0,
-            image: String::new(),
-            sample: String::new(),
-        }
-    }
+    pub image: String,  // 原图 URL（用于下载）
+    pub sample: String, // 预览图 URL（用于显示）
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,7 +44,11 @@ mod tests {
 
     #[test]
     fn gelbooru_post_new_creates_post() {
-        let post = GelbooruPost::new(12345, "https://example.com/post".to_string(), "Test Post".to_string());
+        let post = GelbooruPost::new(
+            12345,
+            "https://example.com/post".to_string(),
+            "Test Post".to_string(),
+        );
 
         assert_eq!(post.id, 12345);
         assert_eq!(post.url, "https://example.com/post");
@@ -109,8 +99,16 @@ mod tests {
     #[test]
     fn gelbooru_post_with_tags() {
         let mut post = GelbooruPost::new(1, "url".to_string(), "title".to_string());
-        post.tag_list.push(GelbooruTag::new("1girl".to_string(), "general".to_string(), 100));
-        post.tag_list.push(GelbooruTag::new("solo".to_string(), "general".to_string(), 200));
+        post.tag_list.push(GelbooruTag::new(
+            "1girl".to_string(),
+            "general".to_string(),
+            100,
+        ));
+        post.tag_list.push(GelbooruTag::new(
+            "solo".to_string(),
+            "general".to_string(),
+            200,
+        ));
 
         assert_eq!(post.tag_list.len(), 2);
         assert_eq!(post.tag_list[0].text, "1girl");
@@ -119,13 +117,13 @@ mod tests {
 
     #[rstest]
     #[case(1, "url1", "title1")]
-    #[case(999999, "https://gelbooru.com/index.php?page=post&s=view&id=123", "Sample Post")]
+    #[case(
+        999999,
+        "https://gelbooru.com/index.php?page=post&s=view&id=123",
+        "Sample Post"
+    )]
     #[case(0, "", "Minimal Post")]
-    fn gelbooru_post_various_ids(
-        #[case] id: u32,
-        #[case] url: &str,
-        #[case] title: &str,
-    ) {
+    fn gelbooru_post_various_ids(#[case] id: u32, #[case] url: &str, #[case] title: &str) {
         let post = GelbooruPost::new(id, url.to_string(), title.to_string());
         assert_eq!(post.id, id);
         assert_eq!(post.url, url);

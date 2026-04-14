@@ -95,6 +95,7 @@ impl GelbooruScraper {
                 let text = a.text().collect::<String>().trim().to_lowercase();
                 if let Some(href) = a.value().attr("href") {
                     // 检查 "next" 链接
+                    #[allow(clippy::collapsible_if)]
                     if text == "next" || text == ">" || text == "›" || text == "→" {
                         if href.contains("pid=") {
                             if let Some(pid_str) = href.split("pid=").nth(1) {

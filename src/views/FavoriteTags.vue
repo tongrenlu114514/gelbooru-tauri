@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed } from 'vue';
 import {
   NSpace,
   NButton,
@@ -13,130 +13,123 @@ import {
   NCollapse,
   NCollapseItem,
   NPopconfirm,
-  useMessage
-} from 'naive-ui'
-import { 
-  HeartOutline, 
-  AddOutline, 
-  TrashOutline, 
-  SearchOutline
-} from '@vicons/ionicons5'
-import { useFavoriteTagsStore } from '@/stores/favoriteTags'
-import { useRouter } from 'vue-router'
-import type { FavoriteTag } from '@/types'
+  useMessage,
+} from 'naive-ui';
+import { HeartOutline, AddOutline, TrashOutline, SearchOutline } from '@vicons/ionicons5';
+import { useFavoriteTagsStore } from '@/stores/favoriteTags';
+import { useRouter } from 'vue-router';
+import type { FavoriteTag } from '@/types';
 
-const router = useRouter()
-const message = useMessage()
-const favoriteTagsStore = useFavoriteTagsStore()
+const router = useRouter();
+const message = useMessage();
+const favoriteTagsStore = useFavoriteTagsStore();
 
-const showAddModal = ref(false)
-const showAddChildModal = ref(false)
-const newTagName = ref('')
-const newTagType = ref('general')
-const selectedParentId = ref<number | null>(null)
-const searchQuery = ref('')
+const showAddModal = ref(false);
+const showAddChildModal = ref(false);
+const newTagName = ref('');
+const newTagType = ref('general');
+const selectedParentId = ref<number | null>(null);
+const searchQuery = ref('');
 
 const tagTypeOptions = [
   { label: '作品 (Copyright)', value: 'copyright' },
   { label: '角色 (Character)', value: 'character' },
   { label: '艺术家 (Artist)', value: 'artist' },
-  { label: '一般 (General)', value: 'general' }
-]
+  { label: '一般 (General)', value: 'general' },
+];
 
 const tagTypeColors: Record<string, string> = {
   artist: '#4caf50',
   character: '#e91e63',
   copyright: '#9c27b0',
   general: '#2196f3',
-  metadata: '#607d8b'
-}
+  metadata: '#607d8b',
+};
 
 // 过滤后的标签组
 const filteredGroups = computed(() => {
   if (!searchQuery.value) {
-    return favoriteTagsStore.tags
+    return favoriteTagsStore.tags;
   }
-  
-  const query = searchQuery.value.toLowerCase()
-  return favoriteTagsStore.tags.filter(group => {
-    const parentMatch = group.parent.tag.toLowerCase().includes(query)
-    const childMatch = group.children.some(child => 
-      child.tag.toLowerCase().includes(query)
-    )
-    return parentMatch || childMatch
-  })
-})
+
+  const query = searchQuery.value.toLowerCase();
+  return favoriteTagsStore.tags.filter((group) => {
+    const parentMatch = group.parent.tag.toLowerCase().includes(query);
+    const childMatch = group.children.some((child) => child.tag.toLowerCase().includes(query));
+    return parentMatch || childMatch;
+  });
+});
 
 // 统计总数
 const totalTags = computed(() => {
-  let count = 0
+  let count = 0;
   for (const group of favoriteTagsStore.tags) {
-    count += 1 // parent
-    count += group.children.length
+    count += 1; // parent
+    count += group.children.length;
   }
-  return count
-})
+  return count;
+});
 
 async function openAddModal(parentId?: number) {
-  newTagName.value = ''
-  newTagType.value = 'general'
+  newTagName.value = '';
+  newTagType.value = 'general';
   if (parentId) {
-    selectedParentId.value = parentId
-    showAddChildModal.value = true
+    selectedParentId.value = parentId;
+    showAddChildModal.value = true;
   } else {
-    selectedParentId.value = null
-    showAddModal.value = true
+    selectedParentId.value = null;
+    showAddModal.value = true;
   }
 }
 
 async function addTag() {
   if (!newTagName.value.trim()) {
-    message.warning('请输入标签名称')
-    return
+    message.warning('请输入标签名称');
+    return;
   }
-  
+
   try {
-    const tag = newTagName.value.trim().replace(/\s+/g, '_')
-    
+    const tag = newTagName.value.trim().replace(/\s+/g, '_');
+
     if (selectedParentId.value) {
-      await favoriteTagsStore.addChildTag(tag, newTagType.value, selectedParentId.value)
-      showAddChildModal.value = false
+      await favoriteTagsStore.addChildTag(tag, newTagType.value, selectedParentId.value);
+      showAddChildModal.value = false;
     } else {
-      await favoriteTagsStore.addParentTag(tag, newTagType.value)
-      showAddModal.value = false
+      await favoriteTagsStore.addParentTag(tag, newTagType.value);
+      showAddModal.value = false;
     }
-    
-    message.success('添加成功')
-    newTagName.value = ''
-  } catch (error) {
-    message.error('添加失败')
+
+    message.success('添加成功');
+    newTagName.value = '';
+  } catch {
+    message.error('添加失败');
   }
 }
 
 async function removeTag(tag: FavoriteTag) {
   try {
-    await favoriteTagsStore.removeTag(tag.id)
-    message.success('删除成功')
-  } catch (error) {
-    message.error('删除失败')
+    await favoriteTagsStore.removeTag(tag.id);
+    message.success('删除成功');
+  } catch {
+    message.error('删除失败');
   }
 }
 
 function searchWithTag(tag: string) {
-  router.push({ name: 'home', query: { tag } })
+  router.push({ name: 'home', query: { tag } });
 }
 
 onMounted(() => {
-  favoriteTagsStore.loadTags()
-})
+  favoriteTagsStore.loadTags();
+});
 </script>
 
 <template>
   <div class="favorite-tags-view">
-    <n-space justify="space-between" align="center" style="margin-bottom: 16px;">
+    <n-space justify="space-between" align="center" style="margin-bottom: 16px">
       <n-space align="center">
         <n-icon :size="24" color="#e91e63"><HeartOutline /></n-icon>
-        <span style="font-size: 18px; font-weight: 500;">收藏标签</span>
+        <span style="font-size: 18px; font-weight: 500">收藏标签</span>
         <n-tag size="small" type="info">{{ totalTags }} 个标签</n-tag>
       </n-space>
       <n-space>
@@ -158,7 +151,7 @@ onMounted(() => {
         </n-button>
       </n-space>
     </n-space>
-    
+
     <n-spin :show="favoriteTagsStore.loading">
       <div v-if="filteredGroups.length > 0" class="tags-container">
         <n-collapse>
@@ -170,7 +163,10 @@ onMounted(() => {
             <template #header>
               <div class="group-header">
                 <n-tag
-                  :color="{ color: tagTypeColors[group.parent.tagType] || tagTypeColors.general, textColor: '#fff' }"
+                  :color="{
+                    color: tagTypeColors[group.parent.tagType] || tagTypeColors.general,
+                    textColor: '#fff',
+                  }"
                   size="medium"
                   round
                 >
@@ -198,12 +194,15 @@ onMounted(() => {
                 </n-popconfirm>
               </n-space>
             </template>
-            
+
             <div class="tag-list">
               <!-- Parent tag -->
               <div class="tag-item parent-tag">
                 <n-tag
-                  :color="{ color: tagTypeColors[group.parent.tagType] || tagTypeColors.general, textColor: '#fff' }"
+                  :color="{
+                    color: tagTypeColors[group.parent.tagType] || tagTypeColors.general,
+                    textColor: '#fff',
+                  }"
                   size="large"
                   round
                   clickable
@@ -211,24 +210,23 @@ onMounted(() => {
                 >
                   {{ group.parent.tag }}
                 </n-tag>
-                <n-button 
-                  size="tiny" 
-                  quaternary 
+                <n-button
+                  size="tiny"
+                  quaternary
                   type="primary"
                   @click="searchWithTag(group.parent.tag)"
                 >
                   搜索
                 </n-button>
               </div>
-              
+
               <!-- Child tags -->
-              <div 
-                v-for="child in group.children" 
-                :key="child.id" 
-                class="tag-item child-tag"
-              >
+              <div v-for="child in group.children" :key="child.id" class="tag-item child-tag">
                 <n-tag
-                  :color="{ color: tagTypeColors[child.tagType] || tagTypeColors.general, textColor: '#fff' }"
+                  :color="{
+                    color: tagTypeColors[child.tagType] || tagTypeColors.general,
+                    textColor: '#fff',
+                  }"
                   size="medium"
                   round
                   clickable
@@ -237,12 +235,7 @@ onMounted(() => {
                   {{ child.tag }}
                 </n-tag>
                 <n-space>
-                  <n-button 
-                    size="tiny" 
-                    quaternary 
-                    type="primary"
-                    @click="searchWithTag(child.tag)"
-                  >
+                  <n-button size="tiny" quaternary type="primary" @click="searchWithTag(child.tag)">
                     搜索
                   </n-button>
                   <n-popconfirm @positive-click="removeTag(child)">
@@ -257,7 +250,7 @@ onMounted(() => {
                   </n-popconfirm>
                 </n-space>
               </div>
-              
+
               <!-- Empty children hint -->
               <div v-if="group.children.length === 0" class="empty-children">
                 <span>暂无子标签，点击上方 + 添加</span>
@@ -266,34 +259,19 @@ onMounted(() => {
           </n-collapse-item>
         </n-collapse>
       </div>
-      
+
       <n-empty v-else description="暂无收藏标签">
         <template #extra>
-          <n-button type="primary" @click="openAddModal()">
-            添加第一个标签
-          </n-button>
+          <n-button type="primary" @click="openAddModal()"> 添加第一个标签 </n-button>
         </template>
       </n-empty>
     </n-spin>
-    
+
     <!-- Add Parent Tag Modal -->
-    <n-modal
-      v-model:show="showAddModal"
-      preset="card"
-      title="添加收藏标签"
-      style="width: 400px"
-    >
+    <n-modal v-model:show="showAddModal" preset="card" title="添加收藏标签" style="width: 400px">
       <n-space vertical>
-        <n-input
-          v-model:value="newTagName"
-          placeholder="输入标签名称"
-          @keyup.enter="addTag"
-        />
-        <n-select
-          v-model:value="newTagType"
-          :options="tagTypeOptions"
-          placeholder="选择标签类型"
-        />
+        <n-input v-model:value="newTagName" placeholder="输入标签名称" @keyup.enter="addTag" />
+        <n-select v-model:value="newTagType" :options="tagTypeOptions" placeholder="选择标签类型" />
       </n-space>
       <template #footer>
         <n-space justify="end">
@@ -302,25 +280,12 @@ onMounted(() => {
         </n-space>
       </template>
     </n-modal>
-    
+
     <!-- Add Child Tag Modal -->
-    <n-modal
-      v-model:show="showAddChildModal"
-      preset="card"
-      title="添加子标签"
-      style="width: 400px"
-    >
+    <n-modal v-model:show="showAddChildModal" preset="card" title="添加子标签" style="width: 400px">
       <n-space vertical>
-        <n-input
-          v-model:value="newTagName"
-          placeholder="输入子标签名称"
-          @keyup.enter="addTag"
-        />
-        <n-select
-          v-model:value="newTagType"
-          :options="tagTypeOptions"
-          placeholder="选择标签类型"
-        />
+        <n-input v-model:value="newTagName" placeholder="输入子标签名称" @keyup.enter="addTag" />
+        <n-select v-model:value="newTagType" :options="tagTypeOptions" placeholder="选择标签类型" />
       </n-space>
       <template #footer>
         <n-space justify="end">

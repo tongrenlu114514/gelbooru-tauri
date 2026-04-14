@@ -1,60 +1,60 @@
 <script setup lang="ts">
-import { NMenu, NButton, NSpace } from 'naive-ui'
-import { h } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
-import { useSettingsStore } from '@/stores/settings'
+import { NMenu, NButton, NSpace } from 'naive-ui';
+import { h, type Component } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
+import { useSettingsStore } from '@/stores/settings';
 import {
   SearchOutline,
   DownloadOutline,
   ImageOutline,
   SettingsOutline,
   MenuOutline,
-  HeartOutline
-} from '@vicons/ionicons5'
-import type { MenuOption } from 'naive-ui'
+  HeartOutline,
+} from '@vicons/ionicons5';
+import type { MenuOption } from 'naive-ui';
 
-const router = useRouter()
-const route = useRoute()
-const settingsStore = useSettingsStore()
+const router = useRouter();
+const route = useRoute();
+const settingsStore = useSettingsStore();
 
-const renderIcon = (icon: any) => () => h(icon)
+const renderIcon = (icon: Component) => () => h(icon);
 
 const menuOptions: MenuOption[] = [
   {
     label: '搜索',
     key: 'home',
-    icon: renderIcon(SearchOutline)
+    icon: renderIcon(SearchOutline),
   },
   {
     label: '下载管理',
     key: 'downloads',
-    icon: renderIcon(DownloadOutline)
+    icon: renderIcon(DownloadOutline),
   },
   {
     label: '本地图库',
     key: 'gallery',
-    icon: renderIcon(ImageOutline)
+    icon: renderIcon(ImageOutline),
   },
   {
     label: '收藏标签',
     key: 'favorite-tags',
-    icon: renderIcon(HeartOutline)
+    icon: renderIcon(HeartOutline),
   },
   {
     label: '设置',
     key: 'settings',
-    icon: renderIcon(SettingsOutline)
-  }
-]
+    icon: renderIcon(SettingsOutline),
+  },
+];
 
 function handleMenuSelect(key: string) {
-  router.push({ name: key })
+  router.push({ name: key });
 }
 </script>
 
 <template>
-  <div style="height: 100%; display: flex; flex-direction: column;">
-    <n-space justify="center" style="padding: 12px;">
+  <div style="height: 100%; display: flex; flex-direction: column">
+    <n-space justify="center" style="padding: 12px">
       <n-button quaternary circle @click="settingsStore.toggleSidebar">
         <template #icon>
           <MenuOutline />

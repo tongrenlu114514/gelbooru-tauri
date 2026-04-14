@@ -4,4 +4,3 @@ pub mod page;
 
 pub use post::*;
 pub use tag::*;
-pub use page::*;

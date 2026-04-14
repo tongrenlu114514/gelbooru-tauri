@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, computed, nextTick } from 'vue'
-import { onBeforeRouteLeave, useRoute } from 'vue-router'
+import { ref, onMounted, watch, computed, nextTick } from 'vue';
+import { onBeforeRouteLeave, useRoute } from 'vue-router';
 import {
   NInput,
   NButton,
@@ -12,34 +12,36 @@ import {
   NPagination,
   NIcon,
   NCascader,
-  useMessage
-} from 'naive-ui'
-import { ChevronBack, ChevronForward, Close, HeartOutline } from '@vicons/ionicons5'
-import { useGalleryStore } from '@/stores/gallery'
-import { useDownloadStore } from '@/stores/download'
-import { useFavoriteTagsStore } from '@/stores/favoriteTags'
-import { invoke } from '@tauri-apps/api/core'
-import type { GelbooruPost, GelbooruTag } from '@/types'
+  useMessage,
+} from 'naive-ui';
+import { ChevronBack, ChevronForward, Close, HeartOutline } from '@vicons/ionicons5';
+import { useGalleryStore } from '@/stores/gallery';
+import { useDownloadStore } from '@/stores/download';
+import { useFavoriteTagsStore } from '@/stores/favoriteTags';
+import { invoke } from '@tauri-apps/api/core';
+import type { GelbooruPost, GelbooruTag } from '@/types';
 
-const galleryStore = useGalleryStore()
-const downloadStore = useDownloadStore()
-const favoriteTagsStore = useFavoriteTagsStore()
-const message = useMessage()
-const route = useRoute()
+const galleryStore = useGalleryStore();
+const downloadStore = useDownloadStore();
+const favoriteTagsStore = useFavoriteTagsStore();
+const message = useMessage();
+const route = useRoute();
 
-const searchInput = ref('')
-const isRestoring = ref(false)
-const selectedTags = ref<string[]>([])
-const loading = ref(false)
+const searchInput = ref('');
+const isRestoring = ref(false);
+const selectedTags = ref<string[]>([]);
+const loading = ref(false);
 
 // 预览相关状态
-const showPreview = ref(false)
-const previewLoading = ref(false)
-const currentPreviewIndex = ref(0)
-const previewImageUrl = ref('')
-const previewPost = ref<GelbooruPost | null>(null)
+const showPreview = ref(false);
+const previewLoading = ref(false);
+const currentPreviewIndex = ref(0);
+const previewImageUrl = ref('');
+const previewPost = ref<GelbooruPost | null>(null);
 
-const currentPost = computed(() => previewPost.value || galleryStore.posts[currentPreviewIndex.value])
+const currentPost = computed(
+  () => previewPost.value || galleryStore.posts[currentPreviewIndex.value]
+);
 
 // Tag 分组配置
 const tagTypeConfig: Record<string, { label: string; color: string }> = {
@@ -47,170 +49,191 @@ const tagTypeConfig: Record<string, { label: string; color: string }> = {
   character: { label: '角色', color: '#e91e63' },
   copyright: { label: '作品', color: '#9c27b0' },
   general: { label: '标签', color: '#2196f3' },
-  metadata: { label: '元数据', color: '#607d8b' }
-}
+  metadata: { label: '元数据', color: '#607d8b' },
+};
 
 // 作品标签
 const copyrightTags = computed(() => {
-  if (!previewPost.value?.tagList) return []
-  return previewPost.value.tagList.filter(tag => tag.tagType.toLowerCase() === 'copyright')
-})
+  if (!previewPost.value?.tagList) return [];
+  return previewPost.value.tagList.filter((tag) => tag.tagType.toLowerCase() === 'copyright');
+});
 
 // 角色标签
 const characterTags = computed(() => {
-  if (!previewPost.value?.tagList) return []
-  return previewPost.value.tagList.filter(tag => tag.tagType.toLowerCase() === 'character')
-})
+  if (!previewPost.value?.tagList) return [];
+  return previewPost.value.tagList.filter((tag) => tag.tagType.toLowerCase() === 'character');
+});
 
 // 其他标签分组（排除作品和角色）
 const otherGroupedTags = computed(() => {
-  if (!previewPost.value?.tagList) return []
-  
-  const groups: Record<string, { type: string; label: string; color: string; tags: GelbooruTag[] }> = {}
-  
+  if (!previewPost.value?.tagList) return [];
+
+  const groups: Record<
+    string,
+    { type: string; label: string; color: string; tags: GelbooruTag[] }
+  > = {};
+
   for (const tag of previewPost.value.tagList) {
-    const type = tag.tagType.toLowerCase()
+    const type = tag.tagType.toLowerCase();
     // 跳过作品和角色标签
-    if (type === 'copyright' || type === 'character') continue
-    
-    const config = tagTypeConfig[type] || tagTypeConfig.general
-    
+    if (type === 'copyright' || type === 'character') continue;
+
+    const config = tagTypeConfig[type] || tagTypeConfig.general;
+
     if (!groups[type]) {
       groups[type] = {
         type,
         label: config.label,
         color: config.color,
-        tags: []
-      }
+        tags: [],
+      };
     }
-    groups[type].tags.push(tag)
+    groups[type].tags.push(tag);
   }
-  
+
   // 按优先级排序
-  const order = ['artist', 'general', 'metadata']
+  const order = ['artist', 'general', 'metadata'];
   return Object.values(groups).sort((a, b) => {
-    return order.indexOf(a.type) - order.indexOf(b.type)
-  })
-})
+    return order.indexOf(a.type) - order.indexOf(b.type);
+  });
+});
 
 // 收藏作品和角色标签
 async function favoriteCopyrightAndCharacters() {
-  if (!previewPost.value?.tagList) return
-  
+  if (!previewPost.value?.tagList) return;
+
   try {
     // 先收藏作品标签（作为父标签）
     for (const tag of copyrightTags.value) {
-      const tagName = tag.text.replace(/\s+/g, '_')
-      await favoriteTagsStore.addParentTag(tagName, 'copyright')
+      const tagName = tag.text.replace(/\s+/g, '_');
+      await favoriteTagsStore.addParentTag(tagName, 'copyright');
     }
-    
+
     // 再收藏角色标签（作为子标签）
     for (const copyrightTag of copyrightTags.value) {
-      const parentName = copyrightTag.text.replace(/\s+/g, '_')
+      const parentName = copyrightTag.text.replace(/\s+/g, '_');
       // 查找父标签
-      const group = favoriteTagsStore.findTagGroup(parentName)
+      const group = favoriteTagsStore.findTagGroup(parentName);
       if (group) {
         for (const characterTag of characterTags.value) {
-          const characterName = characterTag.text.replace(/\s+/g, '_')
-          await favoriteTagsStore.addChildTag(characterName, 'character', group.parent.id)
+          const characterName = characterTag.text.replace(/\s+/g, '_');
+          await favoriteTagsStore.addChildTag(characterName, 'character', group.parent.id);
         }
       }
     }
-    
-    message.success('已收藏作品和角色标签')
+
+    message.success('已收藏作品和角色标签');
   } catch (error) {
-    console.error('Failed to favorite tags:', error)
-    message.error('收藏失败')
+    console.error('Failed to favorite tags:', error);
+    message.error('收藏失败');
   }
 }
 
 // 格式化数量显示
 function formatCount(count: number): string {
-  if (count >= 1000000) return (count / 1000000).toFixed(1) + 'M'
-  if (count >= 1000) return (count / 1000).toFixed(1) + 'K'
-  return count.toString()
+  if (count >= 1000000) return (count / 1000000).toFixed(1) + 'M';
+  if (count >= 1000) return (count / 1000).toFixed(1) + 'K';
+  return count.toString();
+}
+
+// 复制所有 tag 到剪贴板
+function copyAllTags() {
+  if (!previewPost.value?.tagList || previewPost.value.tagList.length === 0) return;
+
+  // 将所有 tag 用空格连接（空格替换为下划线）
+  const tagsText = previewPost.value.tagList.map((tag) => tag.text.replace(/\s+/g, '_')).join(' ');
+
+  navigator.clipboard
+    .writeText(tagsText)
+    .then(() => {
+      message.success('已复制所有标签');
+    })
+    .catch((err) => {
+      console.error('Failed to copy:', err);
+      message.error('复制失败');
+    });
 }
 
 // 点击 tag 进行搜索（空格替换为下划线）
 function handleTagClick(tagText: string) {
-  const searchTag = tagText.replace(/\s+/g, '_')
-  addTag(searchTag)
-  closePreview()
-  searchPosts(true)
+  const searchTag = tagText.replace(/\s+/g, '_');
+  addTag(searchTag);
+  closePreview();
+  searchPosts(true);
 }
 
 const ratingOptions = [
   { label: '全部', value: '' },
   { label: 'Safe', value: 'rating:safe' },
   { label: 'Questionable', value: 'rating:questionable' },
-  { label: 'Explicit', value: 'rating:explicit' }
-]
-const selectedRating = ref('')
+  { label: 'Explicit', value: 'rating:explicit' },
+];
+const selectedRating = ref('');
 
 // 级联选择器选项（作品 -> 角色）
 const cascaderOptions = computed(() => {
   return favoriteTagsStore.tags
-    .filter(group => group.parent.tagType === 'copyright')
-    .map(group => ({
+    .filter((group) => group.parent.tagType === 'copyright')
+    .map((group) => ({
       label: group.parent.tag,
       value: group.parent.tag,
       children: group.children
-        .filter(child => child.tagType === 'character')
-        .map(child => ({
+        .filter((child) => child.tagType === 'character')
+        .map((child) => ({
           label: child.tag,
-          value: child.tag
-        }))
-    }))
-})
+          value: child.tag,
+        })),
+    }));
+});
 
-const selectedCascaderValue = ref<string | string[] | null>(null)
+const selectedCascaderValue = ref<string | string[] | null>(null);
 
 // 处理级联选择
 function handleCascaderChange(value: string | string[] | null) {
-  if (!value) return
-  
-  const selectedValue = Array.isArray(value) ? value[value.length - 1] : value
-  if (!selectedValue) return
-  
+  if (!value) return;
+
+  const selectedValue = Array.isArray(value) ? value[value.length - 1] : value;
+  if (!selectedValue) return;
+
   // 查找是否是子节点（角色）
-  let isParentNode = false
-  let parentValue = ''
-  
+  let isParentNode = false;
+  let parentValue = '';
+
   for (const option of cascaderOptions.value) {
     if (option.value === selectedValue) {
       // 选中的是父节点（作品）
-      isParentNode = true
-      break
+      isParentNode = true;
+      break;
     }
     if (option.children) {
-      const child = option.children.find(c => c.value === selectedValue)
+      const child = option.children.find((c) => c.value === selectedValue);
       if (child) {
         // 选中的是子节点（角色），记录父节点
-        parentValue = option.value
-        break
+        parentValue = option.value;
+        break;
       }
     }
   }
-  
-  selectedCascaderValue.value = null
-  
+
+  selectedCascaderValue.value = null;
+
   if (isParentNode) {
     // 选中的是作品标签，替换搜索条件
-    selectedTags.value = [selectedValue]
-    searchPosts(true)
+    selectedTags.value = [selectedValue];
+    searchPosts(true);
   } else {
     // 选中的是角色标签，追加作品和角色
-    let added = false
+    let added = false;
     if (parentValue && !selectedTags.value.includes(parentValue)) {
-      selectedTags.value.push(parentValue)
-      added = true
+      selectedTags.value.push(parentValue);
+      added = true;
     }
     if (!selectedTags.value.includes(selectedValue)) {
-      selectedTags.value.push(selectedValue)
-      added = true
+      selectedTags.value.push(selectedValue);
+      added = true;
     }
     if (added) {
-      searchPosts(true)
+      searchPosts(true);
     }
   }
 }
@@ -218,38 +241,42 @@ function handleCascaderChange(value: string | string[] | null) {
 async function searchPosts(resetPage = false) {
   // 先把输入框的内容加入标签
   if (searchInput.value.trim()) {
-    addTag(searchInput.value.trim())
-    searchInput.value = ''
+    addTag(searchInput.value.trim());
+    searchInput.value = '';
   }
-  
+
   // 重置页数
   if (resetPage) {
-    galleryStore.currentPage = 1
+    galleryStore.currentPage = 1;
   }
-  
+
   // 构建搜索标签
-  const tags = [...selectedTags.value]
+  const tags = [...selectedTags.value];
   if (selectedRating.value) {
-    tags.push(selectedRating.value)
+    tags.push(selectedRating.value);
   }
-  
-  loading.value = true
+
+  loading.value = true;
   try {
-    const result = await invoke<{ postList: GelbooruPost[], tagList: GelbooruTag[], totalPages: number }>('search_posts', {
+    const result = await invoke<{
+      postList: GelbooruPost[];
+      tagList: GelbooruTag[];
+      totalPages: number;
+    }>('search_posts', {
       tags: tags,
-      page: galleryStore.currentPage
-    })
-    
-    galleryStore.setPosts(result.postList)
-    galleryStore.setTags(result.tagList)
-    galleryStore.setTotalPages(result.totalPages)
-    galleryStore.setSearchTags(tags)
+      page: galleryStore.currentPage,
+    });
+
+    galleryStore.setPosts(result.postList);
+    galleryStore.setTags(result.tagList);
+    galleryStore.setTotalPages(result.totalPages);
+    galleryStore.setSearchTags(tags);
   } catch (error) {
-    console.error('Search failed:', error)
+    console.error('Search failed:', error);
   } finally {
-    loading.value = false
+    loading.value = false;
     // 滚动到顶部
-    scrollToTop()
+    scrollToTop();
   }
 }
 
@@ -262,68 +289,68 @@ function scrollToTop() {
       document.querySelector('.n-layout-scroll-container'),
       document.querySelector('.n-scrollbar-container'),
       document.documentElement,
-      document.body
-    ]
-    
+      document.body,
+    ];
+
     for (const container of containers) {
       if (container && 'scrollTop' in container) {
-        (container as HTMLElement).scrollTop = 0
+        (container as HTMLElement).scrollTop = 0;
       }
     }
-    
+
     // 最后尝试 scrollIntoView
-    const firstElement = document.querySelector('.home-view > *:first-child')
+    const firstElement = document.querySelector('.home-view > *:first-child');
     if (firstElement) {
-      firstElement.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      firstElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
-  })
+  });
 }
 
 async function openPreview(index: number) {
-  currentPreviewIndex.value = index
-  previewImageUrl.value = ''
-  previewPost.value = null
-  previewLoading.value = true
-  showPreview.value = true  // 先显示弹窗
-  
+  currentPreviewIndex.value = index;
+  previewImageUrl.value = '';
+  previewPost.value = null;
+  previewLoading.value = true;
+  showPreview.value = true; // 先显示弹窗
+
   try {
-    const post = galleryStore.posts[index]
-    console.log('[DEBUG] Opening preview for post:', post.id)
-    
-    const detail = await invoke<GelbooruPost>('get_post_detail', { id: post.id })
-    console.log('[DEBUG] Got post detail:', detail)
-    console.log('[DEBUG] Sample URL:', detail.statistics.sample)
-    console.log('[DEBUG] Image URL:', detail.statistics.image)
-    
-    previewPost.value = detail
-    
+    const post = galleryStore.posts[index];
+    console.log('[DEBUG] Opening preview for post:', post.id);
+
+    const detail = await invoke<GelbooruPost>('get_post_detail', { id: post.id });
+    console.log('[DEBUG] Got post detail:', detail);
+    console.log('[DEBUG] Sample URL:', detail.statistics.sample);
+    console.log('[DEBUG] Image URL:', detail.statistics.image);
+
+    previewPost.value = detail;
+
     // 使用 sample URL 预览（更快加载）
-    const previewUrl = detail.statistics.sample || detail.statistics.image
-    const base64Url = await invoke<string>('get_image_base64', { url: previewUrl })
-    console.log('[DEBUG] Got base64 image, length:', base64Url.length)
-    previewImageUrl.value = base64Url
+    const previewUrl = detail.statistics.sample || detail.statistics.image;
+    const base64Url = await invoke<string>('get_image_base64', { url: previewUrl });
+    console.log('[DEBUG] Got base64 image, length:', base64Url.length);
+    previewImageUrl.value = base64Url;
   } catch (error) {
-    console.error('[ERROR] Failed to load preview:', error)
+    console.error('[ERROR] Failed to load preview:', error);
     // 使用缩略图作为后备
-    previewImageUrl.value = galleryStore.posts[index].thumbnail || ''
+    previewImageUrl.value = galleryStore.posts[index].thumbnail || '';
   } finally {
-    previewLoading.value = false
+    previewLoading.value = false;
   }
 }
 
 function closePreview() {
-  showPreview.value = false
+  showPreview.value = false;
 }
 
 async function prevImage() {
   if (currentPreviewIndex.value > 0) {
-    await openPreview(currentPreviewIndex.value - 1)
+    await openPreview(currentPreviewIndex.value - 1);
   }
 }
 
 async function nextImage() {
   if (currentPreviewIndex.value < galleryStore.posts.length - 1) {
-    await openPreview(currentPreviewIndex.value + 1)
+    await openPreview(currentPreviewIndex.value + 1);
   }
 }
 
@@ -333,7 +360,7 @@ async function downloadPost(post: GelbooruPost) {
   let tags = post.tagList || [];
   let posted = post.statistics.posted || '';
   let rating = post.statistics.rating || '';
-  
+
   if (!imageUrl || tags.length === 0) {
     try {
       const detail = await invoke<GelbooruPost>('get_post_detail', { id: post.id });
@@ -347,19 +374,19 @@ async function downloadPost(post: GelbooruPost) {
       return;
     }
   }
-  
+
   if (!imageUrl) {
     message.error('无法获取图片地址');
     return;
   }
-  
+
   try {
     await downloadStore.addTask({
       postId: post.id,
       imageUrl: imageUrl,
       posted: posted,
       rating: rating,
-      tags: tags
+      tags: tags,
     });
     message.success('已添加到下载队列');
   } catch (error) {
@@ -375,14 +402,14 @@ async function downloadCurrentPost() {
       message.error('无法获取图片地址');
       return;
     }
-    
+
     try {
       await downloadStore.addTask({
         postId: previewPost.value.id,
         imageUrl: imageUrl,
         posted: previewPost.value.statistics.posted || '',
         rating: previewPost.value.statistics.rating || '',
-        tags: previewPost.value.tagList || []
+        tags: previewPost.value.tagList || [],
       });
       message.success('已添加到下载队列');
     } catch (error) {
@@ -394,76 +421,80 @@ async function downloadCurrentPost() {
 
 function addTag(tag: string) {
   if (tag && !selectedTags.value.includes(tag)) {
-    selectedTags.value.push(tag)
+    selectedTags.value.push(tag);
   }
 }
 
 function removeTag(tag: string) {
-  selectedTags.value = selectedTags.value.filter(t => t !== tag)
+  selectedTags.value = selectedTags.value.filter((t) => t !== tag);
 }
 
 // 键盘导航
 function handleKeydown(e: KeyboardEvent) {
-  if (!showPreview.value) return
-  
+  if (!showPreview.value) return;
+
   if (e.key === 'ArrowLeft') {
-    prevImage()
+    prevImage();
   } else if (e.key === 'ArrowRight') {
-    nextImage()
+    nextImage();
   } else if (e.key === 'Escape') {
-    closePreview()
+    closePreview();
   }
 }
 
 onMounted(() => {
   // 加载收藏标签
-  favoriteTagsStore.loadTags()
-  
+  favoriteTagsStore.loadTags();
+
   // 处理 query 参数（从收藏标签页跳转）
   if (route.query.tag) {
-    const tag = route.query.tag as string
+    const tag = route.query.tag as string;
     if (!selectedTags.value.includes(tag)) {
-      selectedTags.value.push(tag)
+      selectedTags.value.push(tag);
     }
-    searchPosts(true)
-    return
+    searchPosts(true);
+    return;
   }
-  
+
   // 尝试恢复页面状态
-  const savedState = galleryStore.restorePageState()
+  const savedState = galleryStore.restorePageState();
   if (savedState) {
-    isRestoring.value = true
-    selectedTags.value = savedState.selectedTags
-    selectedRating.value = savedState.selectedRating
-    galleryStore.setPosts(savedState.posts)
-    galleryStore.setTags(savedState.tags)
-    galleryStore.setTotalPages(savedState.totalPages)
-    galleryStore.setSearchTags(savedState.searchTags)
+    isRestoring.value = true;
+    selectedTags.value = savedState.selectedTags;
+    selectedRating.value = savedState.selectedRating;
+    galleryStore.setPosts(savedState.posts);
+    galleryStore.setTags(savedState.tags);
+    galleryStore.setTotalPages(savedState.totalPages);
+    galleryStore.setSearchTags(savedState.searchTags);
     // 必须在 setSearchTags 之后设置，否则会被重置为1
-    galleryStore.currentPage = savedState.currentPage
+    galleryStore.currentPage = savedState.currentPage;
     // 使用 setTimeout 确保 watch 回调先执行
     setTimeout(() => {
-      isRestoring.value = false
-    }, 0)
-    console.log('[Home] Restored page state')
+      isRestoring.value = false;
+    }, 0);
+    console.log('[Home] Restored page state');
   } else {
     // 没有保存的状态，执行初始搜索
-    searchPosts()
+    searchPosts();
   }
-  window.addEventListener('keydown', handleKeydown)
-})
+  window.addEventListener('keydown', handleKeydown);
+});
 
 // 离开页面前保存状态
 onBeforeRouteLeave(() => {
-  galleryStore.savePageState(selectedTags.value, selectedRating.value)
-})
+  galleryStore.savePageState(selectedTags.value, selectedRating.value);
+});
 
-watch([selectedTags, selectedRating], () => {
-  if (isRestoring.value || loading.value) {
-    return
-  }
-  searchPosts(true)
-}, { deep: true, flush: 'sync' })
+watch(
+  [selectedTags, selectedRating],
+  () => {
+    if (isRestoring.value || loading.value) {
+      return;
+    }
+    searchPosts(true);
+  },
+  { deep: true, flush: 'sync' }
+);
 </script>
 
 <template>
@@ -482,7 +513,7 @@ watch([selectedTags, selectedRating], () => {
         @update:value="handleCascaderChange"
       />
     </div>
-    
+
     <!-- Search Bar -->
     <n-space vertical size="large">
       <n-space>
@@ -490,55 +521,49 @@ watch([selectedTags, selectedRating], () => {
           v-model:value="searchInput"
           placeholder="输入标签搜索..."
           style="width: 400px"
-          @keyup.enter="addTag(searchInput); searchInput = ''"
+          @keyup.enter="
+            addTag(searchInput);
+            searchInput = '';
+          "
         />
-        <n-select
-          v-model:value="selectedRating"
-          :options="ratingOptions"
-          style="width: 150px"
-        />
+        <n-select v-model:value="selectedRating" :options="ratingOptions" style="width: 150px" />
         <n-button type="primary" @click="searchPosts(true)">搜索</n-button>
       </n-space>
-      
+
       <!-- Selected Tags -->
       <n-space v-if="selectedTags.length > 0">
-        <n-tag
-          v-for="tag in selectedTags"
-          :key="tag"
-          closable
-          @close="removeTag(tag)"
-        >
+        <n-tag v-for="tag in selectedTags" :key="tag" closable @close="removeTag(tag)">
           {{ tag }}
         </n-tag>
       </n-space>
     </n-space>
-    
+
     <!-- Results -->
-    <n-spin :show="loading" style="margin-top: 20px;">
+    <n-spin :show="loading" style="margin-top: 20px">
       <template v-if="galleryStore.posts.length > 0">
         <div class="post-grid">
-          <div 
-            v-for="(post, index) in galleryStore.posts" 
-            :key="post.id" 
+          <div
+            v-for="(post, index) in galleryStore.posts"
+            :key="post.id"
             class="post-card"
             @click="openPreview(index)"
           >
             <div class="post-thumbnail">
               <img
                 :src="post.thumbnail || post.statistics.image"
-                style="width: 100%; height: 100%; object-fit: cover;"
+                style="width: 100%; height: 100%; object-fit: cover"
               />
             </div>
             <div class="post-info">
-              <span style="font-size: 12px; color: #999;">#{{ post.id }}</span>
+              <span style="font-size: 12px; color: #999">#{{ post.id }}</span>
               <n-button size="small" type="primary" block @click.stop="downloadPost(post)">
                 下载
               </n-button>
             </div>
           </div>
         </div>
-        
-        <n-space justify="center" style="margin-top: 20px;">
+
+        <n-space justify="center" style="margin-top: 20px">
           <n-pagination
             v-model:page="galleryStore.currentPage"
             :page-count="galleryStore.totalPages"
@@ -548,12 +573,15 @@ watch([selectedTags, selectedRating], () => {
       </template>
       <n-empty v-else description="搜索图片..." />
     </n-spin>
-    
+
     <!-- Image Preview Modal -->
     <div v-if="showPreview" class="preview-overlay" @click.self="closePreview">
       <div class="preview-modal">
         <div class="preview-header">
-          <span style="color: #fff;">#{{ currentPost?.id }} - {{ currentPreviewIndex + 1 }} / {{ galleryStore.posts.length }}</span>
+          <span style="color: #fff"
+            >#{{ currentPost?.id }} - {{ currentPreviewIndex + 1 }} /
+            {{ galleryStore.posts.length }}</span
+          >
           <n-button quaternary circle @click="closePreview">
             <template #icon>
               <n-icon :component="Close" color="#fff" />
@@ -564,54 +592,68 @@ watch([selectedTags, selectedRating], () => {
           <!-- 左侧图片区域 -->
           <div class="preview-image-area">
             <div class="preview-container">
-              <n-spin :show="previewLoading" style="min-height: 400px;">
-                <img 
-                  v-if="previewImageUrl" 
-                  :src="previewImageUrl" 
-                  style="max-width: 100%; max-height: 70vh; display: block; margin: 0 auto;"
+              <n-spin :show="previewLoading" style="min-height: 400px">
+                <img
+                  v-if="previewImageUrl"
+                  :src="previewImageUrl"
+                  style="max-width: 100%; max-height: 70vh; display: block; margin: 0 auto"
                 />
               </n-spin>
-              
+
               <!-- Navigation -->
-              <button 
-                v-if="currentPreviewIndex > 0"
-                class="nav-btn prev" 
-                @click="prevImage"
-              >
+              <button v-if="currentPreviewIndex > 0" class="nav-btn prev" @click="prevImage">
                 <n-icon :component="ChevronBack" size="32" color="#fff" />
               </button>
-              <button 
+              <button
                 v-if="currentPreviewIndex < galleryStore.posts.length - 1"
-                class="nav-btn next" 
+                class="nav-btn next"
                 @click="nextImage"
               >
                 <n-icon :component="ChevronForward" size="32" color="#fff" />
               </button>
             </div>
           </div>
-          
+
           <!-- 右侧信息区域 -->
           <div class="preview-sidebar">
             <div class="sidebar-info">
               <n-space v-if="previewPost">
-                <n-tag :type="previewPost.statistics.rating === 'Safe' ? 'success' : previewPost.statistics.rating === 'Explicit' ? 'error' : 'warning'">
+                <n-tag
+                  :type="
+                    previewPost.statistics.rating === 'Safe'
+                      ? 'success'
+                      : previewPost.statistics.rating === 'Explicit'
+                        ? 'error'
+                        : 'warning'
+                  "
+                >
                   {{ previewPost.statistics.rating }}
                 </n-tag>
                 <n-tag>{{ previewPost.statistics.score }} 分</n-tag>
                 <n-tag v-if="previewPost.statistics.size">{{ previewPost.statistics.size }}</n-tag>
               </n-space>
             </div>
-            
+
             <!-- 作品和角色标签区域 -->
             <div class="sidebar-tags" v-if="previewPost && previewPost.tagList.length > 0">
+              <!-- 复制所有 tag 按钮 -->
+              <div class="copy-all-tags">
+                <n-button size="small" type="primary" ghost block @click="copyAllTags">
+                  复制所有标签
+                </n-button>
+              </div>
+
               <!-- 作品和角色标签（独立显示） -->
-              <div v-if="copyrightTags.length > 0 || characterTags.length > 0" class="main-tags-section">
+              <div
+                v-if="copyrightTags.length > 0 || characterTags.length > 0"
+                class="main-tags-section"
+              >
                 <div class="main-tags-header">
                   <span class="main-tags-label">作品/角色</span>
-                  <n-button 
+                  <n-button
                     v-if="copyrightTags.length > 0 || characterTags.length > 0"
-                    size="tiny" 
-                    type="primary" 
+                    size="tiny"
+                    type="primary"
                     quaternary
                     @click="favoriteCopyrightAndCharacters"
                   >
@@ -644,7 +686,7 @@ watch([selectedTags, selectedRating], () => {
                   </n-tag>
                 </div>
               </div>
-              
+
               <!-- 其他标签 -->
               <div class="other-tags-section" v-if="otherGroupedTags.length > 0">
                 <div class="tag-group" v-for="group in otherGroupedTags" :key="group.type">
@@ -658,17 +700,17 @@ watch([selectedTags, selectedRating], () => {
                       @click="handleTagClick(tag.text)"
                     >
                       {{ tag.text }}
-                      <span class="tag-count" v-if="tag.count > 0">{{ formatCount(tag.count) }}</span>
+                      <span class="tag-count" v-if="tag.count > 0">{{
+                        formatCount(tag.count)
+                      }}</span>
                     </n-tag>
                   </div>
                 </div>
               </div>
             </div>
-            
+
             <div class="sidebar-actions">
-              <n-button type="primary" block @click="downloadCurrentPost">
-                下载原图
-              </n-button>
+              <n-button type="primary" block @click="downloadCurrentPost"> 下载原图 </n-button>
             </div>
           </div>
         </div>
@@ -722,7 +764,9 @@ watch([selectedTags, selectedRating], () => {
   border-radius: 8px;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.06);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
   display: flex;
   flex-direction: column;
   cursor: pointer;
@@ -857,6 +901,10 @@ watch([selectedTags, selectedRating], () => {
   padding: 12px 16px;
 }
 
+.copy-all-tags {
+  margin-bottom: 12px;
+}
+
 .main-tags-section {
   margin-bottom: 16px;
   padding: 12px;
@@ -885,7 +933,9 @@ watch([selectedTags, selectedRating], () => {
 
 .main-tag {
   cursor: pointer;
-  transition: transform 0.15s ease, opacity 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    opacity 0.15s ease;
   font-size: 13px;
   padding: 4px 10px;
 }
@@ -929,7 +979,9 @@ watch([selectedTags, selectedRating], () => {
 
 .tag-item {
   cursor: pointer;
-  transition: transform 0.15s ease, opacity 0.15s ease;
+  transition:
+    transform 0.15s ease,
+    opacity 0.15s ease;
   max-width: 150px;
 }
 

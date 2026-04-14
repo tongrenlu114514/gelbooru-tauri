@@ -27,6 +27,9 @@ url = "2"
 lazy_static = "1.5"
 base64 = "0.22"
 
+[dev-dependencies]
+rstest = "0.23"
+
 [profile.release]
 panic = "abort"
 codegen-units = 1

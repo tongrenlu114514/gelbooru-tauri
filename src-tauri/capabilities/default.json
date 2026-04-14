@@ -5,14 +5,16 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "fs:default",
+    "fs:allow-read-dir",
+    "fs:allow-exists",
+    "fs:allow-stat",
+    "fs:allow-read",
+    "fs:allow-read-file",
     "shell:allow-open",
     {
       "identifier": "fs:scope",
       "allow": [
-        { "path": "$RESOURCE/**" },
-        { "path": "$APP/**" },
-        { "path": "$DESKTOP/**" },
-        { "path": "$HOME/**" },
         { "path": "**" }
       ]
     }

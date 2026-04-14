@@ -1,192 +1,315 @@
-# Gelbooru 图片爬虫项目
+# Gelbooru Downloader
 
 ## 项目概述
 
-这是一个基于 **Spring Boot 2.7.0** 开发的 Gelbooru 图片爬虫应用，用于自动化下载 Gelbooru 网站的图片资源。
+一个基于 **Tauri 2.0 + Vue 3** 开发的 Gelbooru 图片下载器桌面应用，提供图片搜索、浏览、下载和管理功能。
 
 ### 主要技术栈
 
-- **框架**: Spring Boot 2.7.0
-- **Java 版本**: JDK 1.8
-- **HTTP 客户端**: OkHttp3
-- **HTML 解析**: Jsoup
-- **工具库**: 
-  - Hutool 5.8.3
-  - Apache Commons (Lang3, Text, Collections4, IO, Codec)
-  - Google Guava
-  - Gson
-  - Lombok
+**前端**
+- **框架**: Vue 3.5 + TypeScript 5.7
+- **构建工具**: Vite 6.0
+- **UI 组件库**: Naive UI 2.41
+- **状态管理**: Pinia 2.3
+- **路由**: Vue Router 4.5
+- **图标**: @vicons/ionicons5
+
+**后端 (Rust)**
+- **框架**: Tauri 2.0
+- **HTTP 客户端**: reqwest 0.12 (支持 rustls-tls)
+- **HTML 解析**: scraper 0.22
+- **数据库**: rusqlite 0.32 (SQLite)
+- **异步运行时**: tokio 1.x (full features)
+- **序列化**: serde + serde_json
+- **其他**: chrono, futures, regex, thiserror, lazy_static, base64
 
 ### 项目架构
 
 ```
-com.gelbooru
-├── Main.java                    # 应用入口
-├── configuration/               # 配置类
-│   ├── GelbooruProperties.java  # Gelbooru 站点配置
-│   ├── HttpProperties.java      # HTTP 请求配置
-│   ├── HttpConfiguration.java   # HTTP 客户端配置
-│   └── HttpProxyProperties.java # 代理配置
-├── context/                     # 数据模型/上下文
-│   ├── GelbooruPage.java        # 分页查询上下文
-│   ├── GelbooruPost.java        # 帖子/图片信息
-│   ├── GelbooruPostStatistics.java # 帖子统计信息
-│   ├── GelbooruTag.java         # 标签信息
-│   └── OssRefBean.java          # 存储引用
-├── controller/                  # 控制器层
-├── enums/                       # 枚举定义
-├── http/                        # HTTP 相关
-│   ├── HttpSupport.java         # HTTP 请求支持
-│   ├── RequestFactory.java      # 请求工厂
-│   ├── CookieJarRepository.java # Cookie 仓库接口
-│   └── CookieJarFileRepository.java # 文件 Cookie 存储
-├── job/                         # 定时任务
-│   └── GelbooruServiceJob.java  # 爬虫任务
-└── service/                     # 服务层
-    ├── GelbooruService.java     # 爬虫服务接口
-    ├── OssService.java          # 存储服务接口
-    └── impl/
-        ├── GelbooruServiceImpl.java  # 爬虫服务实现
-        └── LocalOssServiceImpl.java  # 本地存储实现
+gelbooru/
+├── src/                          # Vue 前端源码
+│   ├── App.vue                   # 根组件 (布局 + 主题)
+│   ├── main.ts                   # 应用入口
+│   ├── components/
+│   │   ├── AppSidebar.vue        # 侧边栏导航
+│   │   └── DownloadNotifier.vue  # 下载通知组件
+│   ├── router/
+│   │   └── index.ts              # 路由配置
+│   ├── stores/                   # Pinia 状态管理
+│   │   ├── download.ts           # 下载任务状态
+│   │   ├── favoriteTags.ts       # 收藏标签状态
+│   │   ├── gallery.ts            # 图库状态
+│   │   └── settings.ts           # 应用设置
+│   ├── types/
+│   │   └── index.ts              # TypeScript 类型定义
+│   └── views/                    # 页面组件
+│       ├── Home.vue              # 首页 (搜索)
+│       ├── Downloads.vue         # 下载管理
+│       ├── Gallery.vue           # 本地图库
+│       ├── FavoriteTags.vue      # 收藏标签
+│       └── Settings.vue          # 设置页面
+│
+├── src-tauri/                    # Rust 后端源码
+│   ├── main.rs                   # Tauri 入口 + 命令注册
+│   ├── lib.rs                    # 模块声明 (空)
+│   ├── commands/                 # Tauri 命令
+│   │   ├── mod.rs                # 模块导出
+│   │   ├── gelbooru.rs           # Gelbooru API 命令
+│   │   ├── download.rs           # 下载管理命令
+│   │   ├── gallery.rs            # 图库管理命令
+│   │   └── favorite_tags.rs      # 收藏标签命令
+│   ├── models/                   # 数据模型
+│   │   ├── mod.rs
+│   │   ├── post.rs               # 帖子模型
+│   │   ├── tag.rs                # 标签模型
+│   │   └── page.rs               # 分页模型
+│   ├── services/                 # 服务层
+│   │   ├── mod.rs
+│   │   ├── http.rs               # HTTP 客户端
+│   │   └── scraper.rs            # HTML 解析器
+│   ├── db/
+│   │   └── mod.rs                # SQLite 数据库操作
+│   └── gelbooru.db               # SQLite 数据库文件
+│
+├── cookie/                       # Cookie 存储 (遗留)
+├── dist/                         # 前端构建输出
+└── target/                       # Rust 构建输出
 ```
 
 ## 核心功能
 
-### 1. 图片抓取
-- 支持按标签搜索 Gelbooru 图片
-- 自动过滤视频和动画 (`video`, `animated` 标签排除)
+### 1. 图片搜索
+- 按标签搜索 Gelbooru 图片
+- 自动过滤视频和动画 (`-video`, `-animated` 标签排除)
 - 优先抓取高分辨率图片 (`highres` 标签)
 - 每页 42 张图片，支持分页遍历
 
-### 2. 智能分类存储
+### 2. 下载管理
+- 多任务并发下载 (默认 3 个并发)
+- 支持暂停、恢复、取消操作
+- 实时进度显示
+- 智能文件命名和分类存储
+
+### 3. 智能分类存储
 下载的图片按以下结构自动分类存储：
 ```
-D:/project/gelbooru/imgs/
+{downloadPath}/
 └── {postedDate}/                    # 发布日期
     └── {rating}/                     # 内容分级 (safe/questionable/explicit)
         └── {copyright}/               # 版权/作品名
             └── [{character}]{id}({artist}).{ext}  # 文件名
 ```
 
-### 3. 元数据提取
-- 提取标签信息（艺术家、角色、版权、一般标签）
-- 获取图片统计信息（尺寸、评分、发布时间、来源、得分）
-- 解析原图链接
+### 4. 本地图库
+- 浏览已下载的图片
+- 按目录树导航
+- 支持删除图片
+
+### 5. 收藏标签
+- 收藏常用标签
+- 支持父子层级分组
+- 快速搜索收藏的标签
+
+### 6. 应用设置
+- 主题切换 (亮色/暗色)
+- 下载路径配置
+- 并发下载数设置
+- 代理配置
 
 ## 构建与运行
 
 ### 环境要求
-- JDK 1.8+
-- Maven 3.6+
+- Node.js 18+
+- pnpm 8+
+- Rust 1.70+
+- Tauri CLI 2.0
 
-### 构建命令
-
-```bash
-# 编译打包
-mvn clean package
-
-# 跳过测试打包
-mvn clean package -DskipTests
-```
-
-### 运行命令
+### 开发模式
 
 ```bash
-# 直接运行
-java -jar target/gelbooru.jar
+# 安装依赖
+pnpm install
 
-# 或者使用 Maven
-mvn spring-boot:run
+# 启动开发服务器
+pnpm tauri dev
 ```
 
-应用默认在 **8082** 端口启动。
+### 构建发布
 
-### 配置说明
+```bash
+# 构建生产版本
+pnpm tauri build
+```
 
-配置文件位置: `src/main/resources/application.properties`
+构建产物位于 `src-tauri/target/release/bundle/`。
 
-```properties
-# 服务端口
-server.port=8082
+### 仅前端开发
 
-# HTTP User-Agent
-http.userAgent=Mozilla/5.0 (Windows NT 10.0; Win64; x64)...
+```bash
+# 启动 Vite 开发服务器
+pnpm dev
 
-# Cookie 存储目录
-http.cookieDir=/project/gelbooru/cookie
+# 构建前端
+pnpm build
+
+# 预览构建结果
+pnpm preview
+```
+
+## Tauri 命令 API
+
+### Gelbooru 命令
+
+| 命令 | 参数 | 说明 |
+|------|------|------|
+| `search_posts` | `tags: string[]`, `page: number` | 搜索帖子 |
+| `get_post_detail` | `id: number` | 获取帖子详情 |
+| `get_image_base64` | `url: string` | 获取图片 Base64 |
+| `set_proxy` | `proxy_url: string \| null` | 设置代理 |
+
+### 下载命令
+
+| 命令 | 参数 | 说明 |
+|------|------|------|
+| `add_download_task` | `postId`, `imageUrl`, `fileName`, `savePath` | 添加下载任务 |
+| `start_download` | `id: number` | 开始下载 |
+| `pause_download` | `id: number` | 暂停下载 |
+| `resume_download` | `id: number` | 恢复下载 |
+| `cancel_download` | `id: number` | 取消下载 |
+| `remove_download_task` | `id: number` | 移除任务 |
+| `get_download_tasks` | - | 获取所有任务 |
+| `clear_completed_tasks` | - | 清除已完成任务 |
+| `open_file` | `path: string` | 打开文件 |
+
+### 图库命令
+
+| 命令 | 参数 | 说明 |
+|------|------|------|
+| `get_local_images` | `dir: string` | 获取本地图片 |
+| `delete_image` | `path: string` | 删除图片 |
+| `get_directory_tree` | `basePath: string` | 获取目录树 |
+| `get_directory_images` | `dir: string` | 获取目录图片 |
+
+### 收藏标签命令
+
+| 命令 | 参数 | 说明 |
+|------|------|------|
+| `get_favorite_tags` | - | 获取收藏标签 |
+| `add_parent_tag` | `tag`, `tagType` | 添加父标签 |
+| `add_child_tag` | `tag`, `tagType`, `parentId` | 添加子标签 |
+| `remove_favorite_tag` | `id: number` | 移除收藏标签 |
+| `is_tag_favorited` | `tag: string` | 检查是否已收藏 |
+| `get_child_tags` | `parentId: number` | 获取子标签 |
+
+## 数据模型
+
+### GelbooruPost
+```typescript
+interface GelbooruPost {
+  id: number
+  url: string
+  title: string
+  tagList: GelbooruTag[]
+  statistics: GelbooruPostStatistics
+  thumbnail?: string
+}
+```
+
+### GelbooruTag
+```typescript
+interface GelbooruTag {
+  text: string
+  tagType: string  // artist, character, copyright, general
+  count: number
+}
+```
+
+### DownloadTask
+```typescript
+interface DownloadTask {
+  id: number
+  postId: number
+  imageUrl: string
+  fileName: string
+  savePath: string
+  status: 'pending' | 'downloading' | 'completed' | 'failed' | 'paused' | 'cancelled'
+  progress: number
+  totalSize: number
+  downloadedSize: number
+  error?: string
+}
+```
+
+## 数据库结构
+
+数据库文件: `src-tauri/gelbooru.db`
+
+### 表结构
+
+**downloads** - 下载记录
+```sql
+id, post_id, file_name, file_path, image_url, status, 
+progress, downloaded_size, total_size, created_at, completed_at, error_message
+```
+
+**favorites** - 收藏帖子
+```sql
+id, post_id, created_at
+```
+
+**favorite_tags** - 收藏标签
+```sql
+id, tag, tag_type, parent_id, created_at
+```
+
+**blacklisted_tags** - 黑名单标签
+```sql
+id, tag, created_at
 ```
 
 ## 开发规范
 
-### 代码风格
-- 使用 Lombok 注解简化 POJO 代码 (`@Data`, `@RequiredArgsConstructor`, `@Slf4j`)
-- 使用 `final` 关键字定义常量
-- 采用流式 API (Stream API) 处理集合
+### 前端代码风格
+- 使用 Vue 3 Composition API (`<script setup>`)
+- 使用 Pinia 进行状态管理
+- 使用 TypeScript 类型检查
+- 组件命名: PascalCase
+- 文件命名: PascalCase.vue
 
-### 日志规范
-- 使用 Lombok 的 `@Slf4j` 注解
-- Debug 级别日志需判断 `log.isDebugEnabled()`
-- 错误日志需记录异常堆栈: `log.error(msg, e)`
+### 后端代码风格
+- 使用 `#[tauri::command]` 宏暴露命令
+- 异步操作使用 `async/await`
+- 错误处理返回 `Result<T, String>`
+- 使用 `lazy_static!` 管理全局状态
 
-### 异常处理
-- 使用 `@SneakyThrows` 简化受检异常处理
-- HTTP 请求异常需捕获并记录，避免中断流程
+### 事件通信
+前端监听后端事件:
+```typescript
+import { listen } from '@tauri-apps/api/event'
 
-### 文件存储规范
-- 文件名特殊字符自动替换为下划线 (`:`, ` `, `<`, `>`, `__`)
-- 使用 `StringUtils.replaceEachRepeatedly` 确保多次替换
-
-## 使用示例
-
-### 运行爬虫任务
-
-```java
-// 注入任务类
-@Autowired
-private GelbooruServiceJob job;
-
-// 执行搜索标签的抓取任务
-job.execute("tag_name");
+listen<DownloadProgressEvent>('download-progress', (event) => {
+  // 处理下载进度
+})
 ```
-
-任务会：
-1. 从第 1 页开始遍历
-2. 获取每页 42 张图片的缩略图
-3. 访问每张图片详情页获取元数据
-4. 下载两天内发布的图片
-5. 按分类结构保存到本地
-6. 自动跳过已存在的图片
 
 ## 注意事项
 
-1. **存储路径**: 默认存储在 `D:/project/gelbooru/imgs/`，确保该目录存在或有写入权限
-2. **Cookie 持久化**: Cookie 自动保存到 `cookie/` 目录，支持会话保持
-3. **请求频率**: 代码中未显式限制请求频率，请根据 Gelbooru 的 robots.txt 和实际使用合理控制
-4. **代理支持**: 可通过 `HttpProxyProperties` 配置代理服务器
+1. **代理设置**: 默认代理 `127.0.0.1:7897`，可在设置页面配置
+2. **CSP 配置**: 已配置允许加载 HTTPS 图片资源
+3. **并发控制**: 下载任务通过 Semaphore 控制并发数
+4. **断点续传**: 暂停时保留临时文件，恢复时重新下载
 
-## 测试
+## 配置文件
 
-测试类位于 `src/test/java/com/gelbooru/service/`：
+### tauri.conf.json
+- 窗口尺寸: 1200x800 (最小 800x600)
+- CSP 安全策略已配置
+- 支持 Windows/macOS/Linux 三平台
 
-- `GelbooruServiceTest.java` - 服务层测试
-- `GelbooruCharacterJobTest.java` - 角色抓取任务测试
-- `GelbooruCopyRightJobTest.java` - 版权抓取任务测试
-
-运行测试：
-
-```bash
-mvn test
-```
-
-## 依赖管理
-
-项目使用 Maven 进行依赖管理，主要依赖版本在 `pom.xml` 中定义：
-- Spring Boot: 2.7.0
-- Hutool: 5.8.3
-- Lombok: 1.18.24
-- Jsoup: 1.15.3
-- Gson: 2.10.1
-- Guava: 32.0.0-android
+### tsconfig.json
+- 目标: ESNext
+- 模块: ESNext
+- 严格模式启用
 
 ---
-*最后更新: 2026-03-22*
+*最后更新: 2026-03-26*

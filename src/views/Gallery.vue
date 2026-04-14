@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, h } from 'vue'
+import { ref, onMounted, computed, h } from 'vue';
 import {
   NEmpty,
   NButton,
@@ -14,113 +14,139 @@ import {
   NLayoutContent,
   useMessage,
   useDialog,
-  type TreeOption
-} from 'naive-ui'
-import { 
-  RefreshOutline, 
-  OpenOutline, 
-  FolderOpenOutline, 
-  TrashOutline, 
-  ChevronBackOutline, 
+  type TreeOption,
+} from 'naive-ui';
+import {
+  RefreshOutline,
+  OpenOutline,
+  FolderOpenOutline,
+  TrashOutline,
+  ChevronBackOutline,
   ChevronForwardOutline,
-  FolderOutline
-} from '@vicons/ionicons5'
-import { invoke } from '@tauri-apps/api/core'
-import { convertFileSrc } from '@tauri-apps/api/core'
+  FolderOutline,
+} from '@vicons/ionicons5';
+import { invoke } from '@tauri-apps/api/core';
+import { convertFileSrc } from '@tauri-apps/api/core';
+import { imageBase64Cache } from '../utils/lruCache';
 
-const message = useMessage()
-const dialog = useDialog()
+const message = useMessage();
+const dialog = useDialog();
+
+// 获取图片 URL（同步，用于模板）
+function getImageSrc(path: string): string {
+  if (!path) return '';
+  // 优先返回缓存的 base64（LRU 缓存自动管理内存），否则返回 asset URL
+  const cached = imageBase64Cache.get(path);
+  if (cached) {
+    return cached;
+  }
+  return convertFileSrc(path.replace(/\\/g, '/'));
+}
+
+// 预加载图片列表的 base64（使用 LRU 缓存，自动限制内存使用）
+async function preloadImages(paths: string[]) {
+  for (const path of paths) {
+    if (!imageBase64Cache.has(path)) {
+      try {
+        const base64 = await invoke<string>('get_local_image_base64', { path });
+        imageBase64Cache.set(path, base64);
+      } catch (err) {
+        console.warn('Failed to preload image:', path, err);
+      }
+    }
+  }
+}
 
 interface ImageInfo {
-  path: string
-  name: string
+  path: string;
+  name: string;
 }
 
 interface SubDirInfo {
-  path: string
-  name: string
-  imageCount: number
-  thumbnail?: string
+  path: string;
+  name: string;
+  imageCount: number;
+  thumbnail?: string;
 }
 
 interface TreeNode {
-  key: string
-  label: string
-  path: string
-  isLeaf: boolean
-  imageCount: number
-  children?: TreeNode[]
-  thumbnail?: string
+  key: string;
+  label: string;
+  path: string;
+  isLeaf: boolean;
+  imageCount: number;
+  children?: TreeNode[];
+  thumbnail?: string;
 }
 
-const treeData = ref<TreeNode[]>([])
-const selectedKey = ref<string | null>(null)
-const subdirs = ref<SubDirInfo[]>([])
-const images = ref<ImageInfo[]>([])
-const loadingTree = ref(false)
-const loadingImages = ref(false)
+const treeData = ref<TreeNode[]>([]);
+const selectedKey = ref<string | null>(null);
+const subdirs = ref<SubDirInfo[]>([]);
+const images = ref<ImageInfo[]>([]);
+const loadingTree = ref(false);
+const loadingImages = ref(false);
 
-const showPreview = ref(false)
-const previewIndex = ref(0)
+const showPreview = ref(false);
+const previewIndex = ref(0);
 
-const currentImage = computed(() => images.value[previewIndex.value])
+const currentImage = computed(() => images.value[previewIndex.value]);
 
-const currentPath = computed(() => selectedKey.value || '')
+const currentPath = computed(() => selectedKey.value || '');
 
 async function openCurrentFolder() {
   if (currentPath.value) {
     try {
-      await invoke('open_file', { path: currentPath.value })
+      await invoke('open_file', { path: currentPath.value });
     } catch (error) {
-      console.error('Failed to open folder:', error)
+      console.error('Failed to open folder:', error);
     }
   }
 }
 
 function openPreview(index: number) {
-  previewIndex.value = index
-  showPreview.value = true
+  previewIndex.value = index;
+  showPreview.value = true;
 }
 
 function prevImage() {
   if (previewIndex.value > 0) {
-    previewIndex.value--
+    previewIndex.value--;
   }
 }
 
 function nextImage() {
   if (previewIndex.value < images.value.length - 1) {
-    previewIndex.value++
+    previewIndex.value++;
   }
 }
 
 function handleKeydown(e: KeyboardEvent) {
-  if (!showPreview.value) return
-  if (e.key === 'ArrowLeft') prevImage()
-  if (e.key === 'ArrowRight') nextImage()
-  if (e.key === 'Escape') showPreview.value = false
+  if (!showPreview.value) return;
+  if (e.key === 'ArrowLeft') prevImage();
+  if (e.key === 'ArrowRight') nextImage();
+  if (e.key === 'Escape') showPreview.value = false;
 }
 
 async function openImage(path: string) {
   try {
-    await invoke('open_file', { path })
+    await invoke('open_file', { path });
   } catch (error) {
-    console.error('Failed to open image:', error)
+    console.error('Failed to open image:', error);
   }
 }
 
 async function openFolder(path: string) {
   try {
-    const lastSep = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
-    const folderPath = lastSep > 0 ? path.substring(0, lastSep) : path
-    await invoke('open_file', { path: folderPath })
+    const lastSep = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+    const folderPath = lastSep > 0 ? path.substring(0, lastSep) : path;
+    await invoke('open_file', { path: folderPath });
   } catch (error) {
-    console.error('Failed to open folder:', error)
+    console.error('Failed to open folder:', error);
   }
 }
 
 async function deleteImage(index: number) {
-  const img = images.value[index]
+  const img = images.value[index];
   dialog.warning({
     title: '确认删除',
     content: `确定要删除 "${img.name}" 吗？此操作不可撤销。`,
@@ -128,127 +154,158 @@ async function deleteImage(index: number) {
     negativeText: '取消',
     onPositiveClick: async () => {
       try {
-        await invoke('delete_image', { path: img.path })
-        images.value.splice(index, 1)
+        await invoke('delete_image', { path: img.path });
+        images.value.splice(index, 1);
         if (showPreview.value && previewIndex.value >= images.value.length) {
-          previewIndex.value = Math.max(0, images.value.length - 1)
+          previewIndex.value = Math.max(0, images.value.length - 1);
         }
         if (images.value.length === 0) {
-          showPreview.value = false
+          showPreview.value = false;
         }
-        message.success('删除成功')
+        message.success('删除成功');
         // Refresh tree to update counts
-        await loadTree()
+        await loadTree();
       } catch (error) {
-        message.error(`删除失败: ${error}`)
+        message.error(`删除失败: ${error}`);
       }
-    }
-  })
+    },
+  });
 }
 
 function renderTreeLabel({ option }: { option: TreeOption }) {
-  const node = option as unknown as TreeNode
+  const node = option as unknown as TreeNode;
   return h('div', { class: 'tree-node-label' }, [
-    h(NIcon, { 
-      size: 16, 
-      style: { marginRight: '6px' },
-      color: '#f0a020'
-    }, () => h(FolderOutline)),
+    h(
+      NIcon,
+      {
+        size: 16,
+        style: { marginRight: '6px' },
+        color: '#f0a020',
+      },
+      () => h(FolderOutline)
+    ),
     h('span', { style: { flex: 1 } }, node.label as string),
-    h('span', { 
-      style: { 
-        marginLeft: '8px', 
-        fontSize: '12px', 
-        color: '#999',
-        backgroundColor: '#f5f5f5',
-        padding: '2px 6px',
-        borderRadius: '10px'
-      } 
-    }, `${node.imageCount}`)
-  ])
+    h(
+      'span',
+      {
+        style: {
+          marginLeft: '8px',
+          fontSize: '12px',
+          color: '#999',
+          backgroundColor: '#f5f5f5',
+          padding: '2px 6px',
+          borderRadius: '10px',
+        },
+      },
+      `${node.imageCount}`
+    ),
+  ]);
 }
 
 function handleTreeSelect(keys: string[]) {
   if (keys.length > 0) {
-    selectedKey.value = keys[0]
-    const node = findNodeByKey(treeData.value, keys[0])
+    selectedKey.value = keys[0];
+    const node = findNodeByKey(treeData.value, keys[0]);
     if (node) {
-      loadImagesForDirectory(node.path)
+      loadImagesForDirectory(node.path);
     } else {
-      images.value = []
+      images.value = [];
     }
   }
 }
 
 function findNodeByKey(nodes: TreeNode[], key: string): TreeNode | null {
   for (const node of nodes) {
-    if (node.key === key) return node
+    if (node.key === key) return node;
     if (node.children) {
-      const found = findNodeByKey(node.children, key)
-      if (found) return found
+      const found = findNodeByKey(node.children, key);
+      if (found) return found;
     }
   }
-  return null
+  return null;
 }
 
 async function loadTree() {
-  loadingTree.value = true
+  loadingTree.value = true;
   try {
-    const result = await invoke<TreeNode[]>('get_directory_tree', {})
-    treeData.value = result
+    const result = await invoke<TreeNode[]>('get_directory_tree', {});
+    treeData.value = result;
   } catch (error) {
-    console.error('Failed to load directory tree:', error)
+    console.error('Failed to load directory tree:', error);
   } finally {
-    loadingTree.value = false
+    loadingTree.value = false;
   }
 }
 
 async function loadImagesForDirectory(dirPath: string) {
-  loadingImages.value = true
+  loadingImages.value = true;
   try {
-    const result = await invoke<{ subdirs: SubDirInfo[]; images: ImageInfo[]; total: number }>('get_directory_images', {
-      dirPath
-    })
-    subdirs.value = result.subdirs
-    images.value = result.images
+    const result = await invoke<{ subdirs: SubDirInfo[]; images: ImageInfo[]; total: number }>(
+      'get_directory_images',
+      {
+        dirPath,
+      }
+    );
+    subdirs.value = result.subdirs;
+    images.value = result.images;
+
+    // 预加载图片（后台执行，不阻塞 UI）
+    const allPaths = [
+      ...result.images.map((img) => img.path),
+      ...result.subdirs.filter((s) => s.thumbnail).map((s) => s.thumbnail!),
+    ];
+    // 异步预加载，不等待
+    preloadImages(allPaths);
   } catch (error) {
-    console.error('Failed to load images:', error)
-    subdirs.value = []
-    images.value = []
+    console.error('Failed to load images:', error);
+    subdirs.value = [];
+    images.value = [];
   } finally {
-    loadingImages.value = false
+    loadingImages.value = false;
+  }
+}
+
+// 处理图片加载错误，尝试使用 base64（使用 LRU 缓存防止内存泄漏）
+function handleImageError(event: Event, path: string) {
+  const img = event.target as HTMLImageElement;
+  if (img && path && !imageBase64Cache.has(path)) {
+    // 加载 base64 作为后备
+    invoke<string>('get_local_image_base64', { path })
+      .then((base64) => {
+        imageBase64Cache.set(path, base64);
+        img.src = base64;
+      })
+      .catch((err) => console.error('Failed to load base64 fallback:', err));
   }
 }
 
 function enterSubdir(subdir: SubDirInfo) {
-  selectedKey.value = subdir.path
-  loadImagesForDirectory(subdir.path)
+  selectedKey.value = subdir.path;
+  loadImagesForDirectory(subdir.path);
   // Expand tree node
-  const node = findNodeByKey(treeData.value, subdir.path)
+  const node = findNodeByKey(treeData.value, subdir.path);
   if (node) {
     // Tree will auto-expand when selected
   }
 }
 
 async function refresh() {
-  selectedKey.value = null
-  subdirs.value = []
-  images.value = []
-  await loadTree()
+  selectedKey.value = null;
+  subdirs.value = [];
+  images.value = [];
+  await loadTree();
 }
 
 onMounted(() => {
-  loadTree()
-  window.addEventListener('keydown', handleKeydown)
-})
+  loadTree();
+  window.addEventListener('keydown', handleKeydown);
+});
 </script>
 
 <template>
   <div class="gallery-view">
-    <n-space justify="space-between" align="center" style="margin-bottom: 16px;">
-      <span style="font-size: 18px; font-weight: 500;">
-        本地图库
-      </span>
+    <n-space justify="space-between" align="center" style="margin-bottom: 16px">
+      <span style="font-size: 18px; font-weight: 500"> 本地图库 </span>
       <n-button @click="refresh" :loading="loadingTree">
         <template #icon>
           <n-icon><RefreshOutline /></n-icon>
@@ -256,14 +313,9 @@ onMounted(() => {
         刷新
       </n-button>
     </n-space>
-    
-    <n-layout has-sider style="height: calc(100vh - 140px);">
-      <n-layout-sider
-        bordered
-        :width="280"
-        :native-scrollbar="false"
-        content-style="padding: 8px;"
-      >
+
+    <n-layout has-sider style="height: calc(100vh - 140px)">
+      <n-layout-sider bordered :width="280" :native-scrollbar="false" content-style="padding: 8px;">
         <n-spin :show="loadingTree">
           <n-tree
             v-if="treeData.length > 0"
@@ -277,7 +329,7 @@ onMounted(() => {
           <n-empty v-else description="暂无本地图片" />
         </n-spin>
       </n-layout-sider>
-      
+
       <n-layout-content content-style="padding: 12px;">
         <div v-if="selectedKey" class="path-bar" @click="openCurrentFolder">
           <n-icon :size="16"><FolderOpenOutline /></n-icon>
@@ -286,14 +338,19 @@ onMounted(() => {
         <n-spin :show="loadingImages">
           <div v-if="subdirs.length > 0 || images.length > 0" class="content-grid">
             <!-- 子目录卡片 -->
-            <div 
-              v-for="subdir in subdirs" 
-              :key="subdir.path" 
+            <div
+              v-for="subdir in subdirs"
+              :key="subdir.path"
               class="folder-card"
               @click="enterSubdir(subdir)"
             >
               <div class="folder-preview">
-                <img v-if="subdir.thumbnail" :src="convertFileSrc(subdir.thumbnail)" alt="" />
+                <img
+                  v-if="subdir.thumbnail"
+                  :src="getImageSrc(subdir.thumbnail)"
+                  alt=""
+                  @error="handleImageError($event, subdir.thumbnail)"
+                />
                 <n-icon v-else :size="48" color="#f0a020"><FolderOutline /></n-icon>
               </div>
               <div class="folder-info">
@@ -303,13 +360,17 @@ onMounted(() => {
               </div>
             </div>
             <!-- 图片卡片 -->
-            <div 
-              v-for="(img, index) in images" 
-              :key="img.path" 
+            <div
+              v-for="(img, index) in images"
+              :key="img.path"
               class="image-card"
               @click="openPreview(index)"
             >
-              <img :src="convertFileSrc(img.path)" :alt="img.name" />
+              <img
+                :src="getImageSrc(img.path)"
+                :alt="img.name"
+                @error="handleImageError($event, img.path)"
+              />
               <div class="image-overlay">
                 <div class="image-name">{{ img.name }}</div>
                 <div class="image-actions">
@@ -337,32 +398,32 @@ onMounted(() => {
         </n-spin>
       </n-layout-content>
     </n-layout>
-    
-    <n-modal v-model:show="showPreview" preset="card" style="width: auto; max-width: 90vw; max-height: 90vh;">
+
+    <n-modal
+      v-model:show="showPreview"
+      preset="card"
+      style="width: auto; max-width: 90vw; max-height: 90vh"
+    >
       <template #header>
         <n-text>{{ currentImage?.name }}</n-text>
       </template>
       <div class="preview-container">
-        <img 
-          v-if="currentImage" 
-          :src="convertFileSrc(currentImage.path)" 
-          style="max-width: 80vw; max-height: 70vh; object-fit: contain;"
+        <img
+          v-if="currentImage"
+          :src="getImageSrc(currentImage.path)"
+          style="max-width: 80vw; max-height: 70vh; object-fit: contain"
+          @error="handleImageError($event, currentImage.path)"
         />
         <div class="preview-nav">
-          <n-button 
-            quaternary 
-            circle 
-            :disabled="previewIndex === 0"
-            @click="prevImage"
-          >
+          <n-button quaternary circle :disabled="previewIndex === 0" @click="prevImage">
             <template #icon>
               <n-icon :size="24"><ChevronBackOutline /></n-icon>
             </template>
           </n-button>
           <n-text depth="3">{{ previewIndex + 1 }} / {{ images.length }}</n-text>
-          <n-button 
-            quaternary 
-            circle 
+          <n-button
+            quaternary
+            circle
             :disabled="previewIndex === images.length - 1"
             @click="nextImage"
           >
@@ -370,10 +431,13 @@ onMounted(() => {
               <n-icon :size="24"><ChevronForwardOutline /></n-icon>
             </template>
           </n-button>
-          <n-button 
-            type="error" 
+          <n-button
+            type="error"
             quaternary
-            @click="showPreview = false; deleteImage(previewIndex)"
+            @click="
+              showPreview = false;
+              deleteImage(previewIndex);
+            "
           >
             <template #icon>
               <n-icon><TrashOutline /></n-icon>
@@ -435,7 +499,9 @@ onMounted(() => {
   background: linear-gradient(135deg, #fff8e6 0%, #fff3d6 100%);
   border: 2px solid #f0a020;
   box-shadow: 0 2px 8px rgba(240, 160, 32, 0.2);
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition:
+    transform 0.2s,
+    box-shadow 0.2s;
 }
 
 .folder-card:hover {
@@ -500,7 +566,9 @@ onMounted(() => {
   cursor: pointer;
   background: #f5f5f5;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition:
+    transform 0.2s,
+    box-shadow 0.2s;
 }
 
 .image-card:hover {

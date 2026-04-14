@@ -7,7 +7,14 @@
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test": "vitest",
+    "test:watch": "vitest --watch",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src --ext .vue,.ts,.js",
+    "lint:fix": "eslint src --ext .vue,.ts,.js --fix",
+    "format": "prettier --write \"src/**/*.{vue,ts,js,json,css}\"",
+    "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
     "@tauri-apps/plugin-fs": "^2.4.5",
@@ -19,12 +26,24 @@
     "vue-router": "^4.5.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@tauri-apps/api": "^2.2.0",
     "@tauri-apps/cli": "^2.2.7",
+    "@testing-library/user-event": "^14.6.1",
+    "@testing-library/vue": "^8.1.0",
     "@types/node": "^22.10.5",
     "@vitejs/plugin-vue": "^5.2.1",
+    "@vitest/coverage-v8": "^4.1.4",
+    "eslint": "^10.2.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-vue": "^10.8.0",
+    "jsdom": "^29.0.2",
+    "prettier": "^3.8.2",
     "typescript": "^5.7.3",
+    "typescript-eslint": "^8.58.1",
     "vite": "^6.0.11",
+    "vitest": "^4.1.4",
+    "vue-eslint-parser": "^10.4.0",
     "vue-tsc": "^2.2.0"
   }
 }

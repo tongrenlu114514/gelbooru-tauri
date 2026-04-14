@@ -1,0 +1,27 @@
+{
+  "project": "gelbooru",
+  "name": "Gelbooru Downloader",
+  "created": "2026-04-14",
+  "workflow": {
+    "autoResearch": false,
+    "requireApproval": true,
+    "autoCommit": true
+  },
+  "phases": [],
+  "branches": {
+    "main": "master"
+  },
+  "codebase": {
+    "mapped": true,
+    "path": ".planning/codebase/",
+    "documents": [
+      "STACK.md",
+      "INTEGRATIONS.md",
+      "ARCHITECTURE.md",
+      "STRUCTURE.md",
+      "CONVENTIONS.md",
+      "TESTING.md",
+      "CONCERNS.md"
+    ]
+  }
+}

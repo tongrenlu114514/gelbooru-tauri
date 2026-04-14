@@ -1,6 +1,5 @@
 use scraper::{Html, Selector};
 use crate::models::{GelbooruPost, GelbooruTag, GelbooruPostStatistics};
-use regex::Regex;
 
 const BASE_URL: &str = "https://gelbooru.com";
 const PAGE_SIZE: u32 = 42;

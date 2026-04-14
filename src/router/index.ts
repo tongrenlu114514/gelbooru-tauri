@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHistory } from 'vue-router';
 
 const router = createRouter({
   history: createWebHistory(),
@@ -6,29 +6,29 @@ const router = createRouter({
     {
       path: '/',
       name: 'home',
-      component: () => import('@/views/Home.vue')
+      component: () => import('@/views/Home.vue'),
     },
     {
       path: '/downloads',
       name: 'downloads',
-      component: () => import('@/views/Downloads.vue')
+      component: () => import('@/views/Downloads.vue'),
     },
     {
       path: '/gallery',
       name: 'gallery',
-      component: () => import('@/views/Gallery.vue')
+      component: () => import('@/views/Gallery.vue'),
     },
     {
       path: '/favorite-tags',
       name: 'favorite-tags',
-      component: () => import('@/views/FavoriteTags.vue')
+      component: () => import('@/views/FavoriteTags.vue'),
     },
     {
       path: '/settings',
       name: 'settings',
-      component: () => import('@/views/Settings.vue')
-    }
-  ]
-})
+      component: () => import('@/views/Settings.vue'),
+    },
+  ],
+});
 
-export default router
+export default router;

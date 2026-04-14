@@ -14,7 +14,12 @@
     "lint": "eslint src --ext .vue,.ts,.js",
     "lint:fix": "eslint src --ext .vue,.ts,.js --fix",
     "format": "prettier --write \"src/**/*.{vue,ts,js,json,css}\"",
-    "typecheck": "vue-tsc --noEmit"
+    "typecheck": "vue-tsc --noEmit",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "src/**/*.{ts,vue}": ["eslint --fix", "prettier --write"],
+    "src-tauri/src/**/*.rs": "cd src-tauri && cargo fmt && cargo clippy -- -D warnings && cd .."
   },
   "dependencies": {
     "@tauri-apps/plugin-fs": "^2.4.5",
@@ -37,7 +42,9 @@
     "eslint": "^10.2.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-vue": "^10.8.0",
+    "husky": "^9.1.7",
     "jsdom": "^29.0.2",
+    "lint-staged": "^16.4.0",
     "prettier": "^3.8.2",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.58.1",

@@ -1,7 +1,7 @@
 use rusqlite::{Connection, OptionalExtension, Result as SqliteResult, Row};
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Mutex;
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -41,14 +41,14 @@ pub struct Database {
 impl Database {
     pub fn new(app_data_dir: &str) -> SqliteResult<Self> {
         let db_path = PathBuf::from(app_data_dir).join("gelbooru.db");
-        
+
         // Ensure directory exists
         if let Some(parent) = db_path.parent() {
             std::fs::create_dir_all(parent).ok();
         }
-        
+
         let conn = Connection::open(&db_path)?;
-        
+
         // Create tables
         conn.execute_batch(
             r#"
@@ -96,13 +96,19 @@ impl Database {
             );
             "#,
         )?;
-        
+
         Ok(Self {
             conn: Mutex::new(conn),
         })
     }
-    
-    pub fn add_download(&self, post_id: u32, file_name: &str, file_path: &str, image_url: &str) -> SqliteResult<i64> {
+
+    pub fn add_download(
+        &self,
+        post_id: u32,
+        file_name: &str,
+        file_path: &str,
+        image_url: &str,
+    ) -> SqliteResult<i64> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT INTO downloads (post_id, file_name, file_path, image_url) VALUES (?1, ?2, ?3, ?4)",
@@ -110,7 +116,7 @@ impl Database {
         )?;
         Ok(conn.last_insert_rowid())
     }
-    
+
     pub fn update_download_status(&self, id: i64, status: &str, progress: f32) -> SqliteResult<()> {
         self.conn.lock().unwrap().execute(
             "UPDATE downloads SET status = ?1, progress = ?2 WHERE id = ?3",
@@ -118,9 +124,11 @@ impl Database {
         )?;
         Ok(())
     }
-    
+
     pub fn is_downloaded(&self, post_id: u32) -> bool {
-        self.conn.lock().unwrap()
+        self.conn
+            .lock()
+            .unwrap()
             .query_row(
                 "SELECT 1 FROM downloads WHERE post_id = ?1 AND status = 'completed'",
                 rusqlite::params![post_id],
@@ -128,7 +136,7 @@ impl Database {
             )
             .unwrap_or(false)
     }
-    
+
     pub fn add_favorite(&self, post_id: u32) -> SqliteResult<()> {
         self.conn.lock().unwrap().execute(
             "INSERT OR IGNORE INTO favorites (post_id) VALUES (?1)",
@@ -136,7 +144,7 @@ impl Database {
         )?;
         Ok(())
     }
-    
+
     pub fn remove_favorite(&self, post_id: u32) -> SqliteResult<()> {
         self.conn.lock().unwrap().execute(
             "DELETE FROM favorites WHERE post_id = ?1",
@@ -144,9 +152,11 @@ impl Database {
         )?;
         Ok(())
     }
-    
+
     pub fn is_favorite(&self, post_id: u32) -> bool {
-        self.conn.lock().unwrap()
+        self.conn
+            .lock()
+            .unwrap()
             .query_row(
                 "SELECT 1 FROM favorites WHERE post_id = ?1",
                 rusqlite::params![post_id],
@@ -154,7 +164,7 @@ impl Database {
             )
             .unwrap_or(false)
     }
-    
+
     // FavoriteTag methods
     fn row_to_favorite_tag(row: &Row) -> SqliteResult<FavoriteTag> {
         Ok(FavoriteTag {
@@ -164,7 +174,7 @@ impl Database {
             parent_id: row.get(3)?,
         })
     }
-    
+
     pub fn add_favorite_tag(&self, tag: &str, tag_type: &str) -> SqliteResult<i64> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
@@ -173,8 +183,13 @@ impl Database {
         )?;
         Ok(conn.last_insert_rowid())
     }
-    
-    pub fn add_favorite_tag_with_parent(&self, tag: &str, tag_type: &str, parent_id: i64) -> SqliteResult<i64> {
+
+    pub fn add_favorite_tag_with_parent(
+        &self,
+        tag: &str,
+        tag_type: &str,
+        parent_id: i64,
+    ) -> SqliteResult<i64> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT OR IGNORE INTO favorite_tags (tag, tag_type, parent_id) VALUES (?1, ?2, ?3)",
@@ -182,7 +197,7 @@ impl Database {
         )?;
         Ok(conn.last_insert_rowid())
     }
-    
+
     pub fn remove_favorite_tag(&self, id: i64) -> SqliteResult<()> {
         self.conn.lock().unwrap().execute(
             "DELETE FROM favorite_tags WHERE id = ?1",
@@ -190,47 +205,53 @@ impl Database {
         )?;
         Ok(())
     }
-    
+
     pub fn get_all_favorite_tags(&self) -> SqliteResult<Vec<FavoriteTagGroup>> {
         let conn = self.conn.lock().unwrap();
-        
+
         // Get all parent tags (parent_id IS NULL)
         let mut stmt = conn.prepare(
             "SELECT id, tag, tag_type, parent_id FROM favorite_tags WHERE parent_id IS NULL ORDER BY created_at"
         )?;
-        
+
         let parents: Vec<FavoriteTag> = stmt
             .query_map([], Self::row_to_favorite_tag)?
             .collect::<Result<Vec<_>, _>>()?;
-        
+
         let mut result = Vec::new();
         for parent in parents {
             let children = self.get_child_tags_internal(&conn, parent.id)?;
             result.push(FavoriteTagGroup { parent, children });
         }
-        
+
         Ok(result)
     }
-    
-    fn get_child_tags_internal(&self, conn: &Connection, parent_id: i64) -> SqliteResult<Vec<FavoriteTag>> {
+
+    fn get_child_tags_internal(
+        &self,
+        conn: &Connection,
+        parent_id: i64,
+    ) -> SqliteResult<Vec<FavoriteTag>> {
         let mut stmt = conn.prepare(
             "SELECT id, tag, tag_type, parent_id FROM favorite_tags WHERE parent_id = ?1 ORDER BY created_at"
         )?;
-        
+
         let children: Vec<FavoriteTag> = stmt
             .query_map(rusqlite::params![parent_id], Self::row_to_favorite_tag)?
             .collect::<Result<Vec<_>, _>>()?;
-        
+
         Ok(children)
     }
-    
+
     pub fn get_child_tags(&self, parent_id: i64) -> SqliteResult<Vec<FavoriteTag>> {
         let conn = self.conn.lock().unwrap();
         self.get_child_tags_internal(&conn, parent_id)
     }
-    
+
     pub fn is_tag_favorited(&self, tag: &str) -> bool {
-        self.conn.lock().unwrap()
+        self.conn
+            .lock()
+            .unwrap()
             .query_row(
                 "SELECT 1 FROM favorite_tags WHERE tag = ?1",
                 rusqlite::params![tag],
@@ -238,12 +259,11 @@ impl Database {
             )
             .unwrap_or(false)
     }
-    
+
     pub fn get_favorite_tag_by_tag(&self, tag: &str) -> SqliteResult<Option<FavoriteTag>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT id, tag, tag_type, parent_id FROM favorite_tags WHERE tag = ?1"
-        )?;
+        let mut stmt =
+            conn.prepare("SELECT id, tag, tag_type, parent_id FROM favorite_tags WHERE tag = ?1")?;
 
         let result = stmt
             .query_row(rusqlite::params![tag], Self::row_to_favorite_tag)
@@ -310,7 +330,7 @@ impl Database {
                 task.error_message,
             ],
         )?;
-        Ok(task.id)
+        Ok(conn.last_insert_rowid())
     }
 
     pub fn get_all_download_tasks(&self) -> SqliteResult<Vec<DownloadTaskRecord>> {
@@ -336,13 +356,22 @@ impl Database {
         Ok(result)
     }
 
-    pub fn update_download_task_progress(&self, id: i64, status: &str, progress: f64, downloaded_size: i64, total_size: i64) -> SqliteResult<()> {
+    pub fn update_download_task_progress(
+        &self,
+        id: i64,
+        status: &str,
+        progress: f64,
+        downloaded_size: i64,
+        total_size: i64,
+    ) -> SqliteResult<()> {
         let conn = self.conn.lock().unwrap();
         let completed_at = if status == "completed" {
-            Some(std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs() as i64)
+            Some(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs() as i64,
+            )
         } else {
             None
         };
@@ -366,5 +395,295 @@ impl Database {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM downloads WHERE id = ?1", rusqlite::params![id])?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn create_test_db() -> (TempDir, Database) {
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let db =
+            Database::new(temp_dir.path().to_str().unwrap()).expect("Failed to create database");
+        (temp_dir, db)
+    }
+
+    // FavoriteTag tests
+    #[test]
+    fn test_add_and_check_favorite_tag() {
+        let (_dir, db) = create_test_db();
+        let id = db.add_favorite_tag("saber", "character").unwrap();
+        assert!(id > 0);
+        assert!(db.is_tag_favorited("saber"));
+    }
+
+    #[test]
+    fn test_add_favorite_tag_with_parent() {
+        let (_dir, db) = create_test_db();
+        let parent_id = db.add_favorite_tag("character", "general").unwrap();
+        let child_id = db
+            .add_favorite_tag_with_parent("saber", "character", parent_id)
+            .unwrap();
+        assert!(child_id > 0);
+
+        let children = db.get_child_tags(parent_id).unwrap();
+        assert_eq!(children.len(), 1);
+        assert_eq!(children[0].tag, "saber");
+        assert_eq!(children[0].parent_id, Some(parent_id));
+    }
+
+    #[test]
+    fn test_remove_favorite_tag() {
+        let (_dir, db) = create_test_db();
+        let id = db.add_favorite_tag("saber", "character").unwrap();
+        assert!(db.is_tag_favorited("saber"));
+
+        db.remove_favorite_tag(id).unwrap();
+        assert!(!db.is_tag_favorited("saber"));
+    }
+
+    #[test]
+    fn test_get_all_favorite_tags_with_children() {
+        let (_dir, db) = create_test_db();
+        let parent_id = db.add_favorite_tag("character", "general").unwrap();
+        db.add_favorite_tag_with_parent("saber", "character", parent_id)
+            .unwrap();
+        db.add_favorite_tag_with_parent("artoria", "character", parent_id)
+            .unwrap();
+
+        let groups = db.get_all_favorite_tags().unwrap();
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].parent.tag, "character");
+        assert_eq!(groups[0].children.len(), 2);
+    }
+
+    // Favorites tests
+    #[test]
+    fn test_add_and_check_favorite() {
+        let (_dir, db) = create_test_db();
+        db.add_favorite(12345).unwrap();
+        assert!(db.is_favorite(12345));
+    }
+
+    #[test]
+    fn test_add_duplicate_favorite_is_ignored() {
+        let (_dir, db) = create_test_db();
+        db.add_favorite(12345).unwrap();
+        db.add_favorite(12345).unwrap(); // Should not panic
+        assert!(db.is_favorite(12345));
+    }
+
+    #[test]
+    fn test_remove_favorite() {
+        let (_dir, db) = create_test_db();
+        db.add_favorite(12345).unwrap();
+        assert!(db.is_favorite(12345));
+
+        db.remove_favorite(12345).unwrap();
+        assert!(!db.is_favorite(12345));
+    }
+
+    #[test]
+    fn test_remove_nonexistent_favorite() {
+        let (_dir, db) = create_test_db();
+        // Should not panic
+        db.remove_favorite(99999).unwrap();
+        assert!(!db.is_favorite(99999));
+    }
+
+    // Settings tests
+    #[test]
+    fn test_set_and_get_setting() {
+        let (_dir, db) = create_test_db();
+        db.set_setting("api_key", "secret123").unwrap();
+
+        let value = db.get_setting("api_key").unwrap();
+        assert_eq!(value, Some("secret123".to_string()));
+    }
+
+    #[test]
+    fn test_get_nonexistent_setting() {
+        let (_dir, db) = create_test_db();
+        let value = db.get_setting("nonexistent").unwrap();
+        assert_eq!(value, None);
+    }
+
+    #[test]
+    fn test_settings_overwrite() {
+        let (_dir, db) = create_test_db();
+        db.set_setting("api_key", "secret123").unwrap();
+        db.set_setting("api_key", "new_secret456").unwrap();
+
+        let value = db.get_setting("api_key").unwrap();
+        assert_eq!(value, Some("new_secret456".to_string()));
+    }
+
+    #[test]
+    fn test_get_all_settings() {
+        let (_dir, db) = create_test_db();
+        db.set_setting("key1", "value1").unwrap();
+        db.set_setting("key2", "value2").unwrap();
+
+        let settings = db.get_all_settings().unwrap();
+        assert_eq!(settings.len(), 2);
+    }
+
+    // Download task tests
+    #[test]
+    fn test_save_and_get_download_task() {
+        let (_dir, db) = create_test_db();
+        let task = DownloadTaskRecord {
+            id: 0,
+            post_id: 12345,
+            file_name: "test.jpg".to_string(),
+            file_path: "/downloads/test.jpg".to_string(),
+            image_url: "https://example.com/test.jpg".to_string(),
+            status: "pending".to_string(),
+            progress: 0.0,
+            downloaded_size: 0,
+            total_size: 0,
+            error_message: None,
+        };
+        let saved_id = db.save_download_task(&task).unwrap();
+        assert!(saved_id >= 0);
+
+        let tasks = db.get_all_download_tasks().unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].post_id, 12345);
+        assert_eq!(tasks[0].file_name, "test.jpg");
+    }
+
+    #[test]
+    fn test_update_download_task_progress() {
+        let (_dir, db) = create_test_db();
+        let task = DownloadTaskRecord {
+            id: 0,
+            post_id: 12345,
+            file_name: "test.jpg".to_string(),
+            file_path: "/downloads/test.jpg".to_string(),
+            image_url: "https://example.com/test.jpg".to_string(),
+            status: "pending".to_string(),
+            progress: 0.0,
+            downloaded_size: 0,
+            total_size: 1024,
+            error_message: None,
+        };
+        let task_id = db.save_download_task(&task).unwrap();
+
+        db.update_download_task_progress(task_id, "downloading", 50.0, 512, 1024)
+            .unwrap();
+
+        let tasks = db.get_all_download_tasks().unwrap();
+        assert_eq!(tasks[0].status, "downloading");
+        assert_eq!(tasks[0].progress, 50.0);
+        assert_eq!(tasks[0].downloaded_size, 512);
+    }
+
+    #[test]
+    fn test_update_download_task_error() {
+        let (_dir, db) = create_test_db();
+        let task = DownloadTaskRecord {
+            id: 0,
+            post_id: 12345,
+            file_name: "test.jpg".to_string(),
+            file_path: "/downloads/test.jpg".to_string(),
+            image_url: "https://example.com/test.jpg".to_string(),
+            status: "pending".to_string(),
+            progress: 0.0,
+            downloaded_size: 0,
+            total_size: 1024,
+            error_message: None,
+        };
+        let task_id = db.save_download_task(&task).unwrap();
+
+        db.update_download_task_error(task_id, "Network timeout")
+            .unwrap();
+
+        let tasks = db.get_all_download_tasks().unwrap();
+        assert_eq!(tasks[0].status, "failed");
+        assert_eq!(tasks[0].error_message, Some("Network timeout".to_string()));
+    }
+
+    #[test]
+    fn test_delete_download_task() {
+        let (_dir, db) = create_test_db();
+        let task = DownloadTaskRecord {
+            id: 0,
+            post_id: 12345,
+            file_name: "test.jpg".to_string(),
+            file_path: "/downloads/test.jpg".to_string(),
+            image_url: "https://example.com/test.jpg".to_string(),
+            status: "pending".to_string(),
+            progress: 0.0,
+            downloaded_size: 0,
+            total_size: 1024,
+            error_message: None,
+        };
+        let task_id = db.save_download_task(&task).unwrap();
+
+        let tasks = db.get_all_download_tasks().unwrap();
+        assert_eq!(tasks.len(), 1);
+
+        db.delete_download_task(task_id).unwrap();
+
+        let tasks = db.get_all_download_tasks().unwrap();
+        assert_eq!(tasks.len(), 0);
+    }
+
+    #[test]
+    fn test_multiple_download_tasks() {
+        let (_dir, db) = create_test_db();
+
+        for i in 1..=5 {
+            let task = DownloadTaskRecord {
+                id: i as i64, // Use unique IDs to avoid conflicts
+                post_id: 1000 + i,
+                file_name: format!("test{}.jpg", i),
+                file_path: format!("/downloads/test{}.jpg", i),
+                image_url: format!("https://example.com/test{}.jpg", i),
+                status: "pending".to_string(),
+                progress: 0.0,
+                downloaded_size: 0,
+                total_size: (1024 * i) as i64,
+                error_message: None,
+            };
+            let _ = db.save_download_task(&task).unwrap();
+        }
+
+        let tasks = db.get_all_download_tasks().unwrap();
+        assert_eq!(tasks.len(), 5);
+    }
+
+    // is_downloaded tests
+    #[test]
+    fn test_is_downloaded() {
+        let (_dir, db) = create_test_db();
+        db.add_download(
+            12345,
+            "test.jpg",
+            "/path/test.jpg",
+            "https://example.com/test.jpg",
+        )
+        .unwrap();
+        db.update_download_status(1, "completed", 100.0).unwrap();
+
+        assert!(db.is_downloaded(12345));
+        assert!(!db.is_downloaded(99999));
+    }
+
+    // get_favorite_tag_by_tag test
+    #[test]
+    fn test_get_favorite_tag_by_tag() {
+        let (_dir, db) = create_test_db();
+        db.add_favorite_tag("saber", "character").unwrap();
+
+        let tag = db.get_favorite_tag_by_tag("saber").unwrap();
+        assert!(tag.is_some());
+        assert_eq!(tag.unwrap().tag, "saber");
+
+        let none = db.get_favorite_tag_by_tag("nonexistent").unwrap();
+        assert!(none.is_none());
     }
 }

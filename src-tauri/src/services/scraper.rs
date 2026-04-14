@@ -679,7 +679,7 @@ mod tests {
     #[test]
     fn test_new_and_default() {
         let scraper = GelbooruScraper::new();
-        let default = GelbooruScraper::default();
+        let default = GelbooruScraper;
         // Both should work identically
         let html = "<html><body></body></html>";
         let (posts1, _, _) = scraper.parse_page(html);

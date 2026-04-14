@@ -12,9 +12,8 @@ pub struct HttpClient {
 impl HttpClient {
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
         let jar = Arc::new(Jar::default());
-        let default_proxy = Some("http://127.0.0.1:7897".to_string());
-        
-        let client = Self::build_client(&jar, default_proxy.as_deref())?;
+        // No default proxy - will be configured from settings
+        let client = Self::build_client(&jar, None)?;
         
         Ok(Self { 
             client: RwLock::new(client), 

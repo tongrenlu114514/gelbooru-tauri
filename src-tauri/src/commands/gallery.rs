@@ -28,6 +28,56 @@ pub(crate) fn validate_path(path: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Validate that a path is within the allowed base directory
+/// This prevents path traversal attacks by ensuring canonical paths
+pub(crate) fn validate_path_within_base(path: &str, base_dir: &str) -> Result<PathBuf, String> {
+    // First do basic validation
+    validate_path(path)?;
+
+    let path_buf = PathBuf::from(path);
+    let base_buf = PathBuf::from(base_dir);
+
+    // If the path doesn't exist yet, we can't canonicalize it
+    // In this case, we check that the normalized path doesn't escape the base
+    if !path_buf.exists() {
+        // Normalize both paths
+        let canonical_base = base_buf.canonicalize()
+            .map_err(|e| format!("无法访问基础目录: {}", e))?;
+
+        // For non-existent paths, construct the expected canonical path
+        // by resolving the relative path against the base
+        let expected_path = canonical_base.join(&path_buf);
+
+        // Check that the expected path starts with the base
+        let expected_str = expected_path.to_string_lossy();
+        let base_str = canonical_base.to_string_lossy();
+
+        if !expected_str.starts_with(&*base_str) && !expected_str.starts_with(&format!("{}/", base_str)) {
+            return Err("路径超出允许范围".to_string());
+        }
+
+        return Ok(expected_path);
+    }
+
+    // For existing paths, canonicalize and check containment
+    let canonical_path = path_buf.canonicalize()
+        .map_err(|e| format!("无法访问路径: {}", e))?;
+
+    let canonical_base = base_buf.canonicalize()
+        .map_err(|e| format!("无法访问基础目录: {}", e))?;
+
+    let canonical_path_str = canonical_path.to_string_lossy();
+    let canonical_base_str = canonical_base.to_string_lossy();
+
+    // Check that the canonical path starts with the base directory
+    if !canonical_path_str.starts_with(&*canonical_base_str) &&
+       !canonical_path_str.starts_with(&format!("{}/", canonical_base_str)) {
+        return Err("路径超出允许范围".to_string());
+    }
+
+    Ok(canonical_path)
+}
+
 #[derive(Serialize, Clone)]
 pub struct ImageInfo {
     path: String,
@@ -72,11 +122,19 @@ pub struct PaginatedImages {
 }
 
 #[tauri::command]
-pub async fn delete_image(path: String) -> Result<(), String> {
-    // Validate path for security
-    validate_path(&path)?;
+pub async fn delete_image(
+    db: State<'_, DbState>,
+    path: String,
+) -> Result<(), String> {
+    // Get download directory from settings
+    let download_dir = db.0.lock()
+        .map_err(|e| e.to_string())?
+        .get_setting("download_path")
+        .map_err(|e| e.to_string())?
+        .unwrap_or_default();
 
-    let path_buf = PathBuf::from(&path);
+    // Validate path is within download directory
+    let path_buf = validate_path_within_base(&path, &download_dir)?;
 
     if !path_buf.exists() {
         return Err(format!("文件不存在: {}", path_buf.display()));
@@ -169,7 +227,7 @@ pub async fn get_local_images(
             .skip(skip)
             .take(page_size)
             .map(|(path, _)| {
-                let name = path.split(|c| c == '/' || c == '\\').last().unwrap_or(&path).to_string();
+                let name = path.rsplit(|c| c == '/' || c == '\\').next().unwrap_or(&path).to_string();
                 ImageInfo { path, name }
             })
             .collect();
@@ -378,7 +436,7 @@ pub async fn get_directory_images(
         let images: Vec<ImageInfo> = images_with_time
             .into_iter()
             .map(|(path, _)| {
-                let name = path.split(|c| c == '/' || c == '\\').last().unwrap_or(&path).to_string();
+                let name = path.rsplit(|c| c == '/' || c == '\\').next().unwrap_or(&path).to_string();
                 ImageInfo { path, name }
             })
             .collect();
@@ -393,27 +451,35 @@ pub async fn get_directory_images(
 
 /// 读取本地图片并返回 base64 数据 URL
 #[tauri::command]
-pub async fn get_local_image_base64(path: String) -> Result<String, String> {
-    // Validate path for security
-    validate_path(&path)?;
+pub async fn get_local_image_base64(
+    db: State<'_, DbState>,
+    path: String,
+) -> Result<String, String> {
+    // Get download directory from settings
+    let download_dir = db.0.lock()
+        .map_err(|e| e.to_string())?
+        .get_setting("download_path")
+        .map_err(|e| e.to_string())?
+        .unwrap_or_default();
+
+    // Validate path is within download directory
+    let path_buf = validate_path_within_base(&path, &download_dir)?;
 
     let result = tokio::task::spawn_blocking(move || {
-        let path = PathBuf::from(&path);
-
-        if !path.exists() {
-            return Err(format!("文件不存在: {}", path.display()));
+        if !path_buf.exists() {
+            return Err(format!("文件不存在: {}", path_buf.display()));
         }
 
-        if !path.is_file() {
+        if !path_buf.is_file() {
             return Err("路径不是文件".to_string());
         }
 
         // 读取文件内容
-        let bytes = fs::read(&path)
+        let bytes = fs::read(&path_buf)
             .map_err(|e| format!("读取文件失败: {}", e))?;
 
         // 检测图片类型
-        let content_type = if let Some(ext) = path.extension() {
+        let content_type = if let Some(ext) = path_buf.extension() {
             match ext.to_string_lossy().to_lowercase().as_str() {
                 "png" => "image/png",
                 "gif" => "image/gif",

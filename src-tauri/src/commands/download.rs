@@ -9,7 +9,7 @@ use serde::{Serialize, Deserialize};
 use crate::commands::gelbooru::HTTP_CLIENT;
 use crate::commands::favorite_tags::DbState;
 use crate::db::DownloadTaskRecord;
-use crate::commands::gallery::validate_path;
+use crate::commands::gallery::validate_path_within_base;
 
 lazy_static::lazy_static! {
     static ref DOWNLOAD_MANAGER: Arc<DownloadManager> = Arc::new(DownloadManager::new());
@@ -511,11 +511,19 @@ async fn persist_error_async(
 }
 
 #[tauri::command]
-pub async fn open_file(path: String) -> Result<(), String> {
-    // Validate path for security
-    validate_path(&path)?;
+pub async fn open_file(
+    db: State<'_, DbState>,
+    path: String,
+) -> Result<(), String> {
+    // Get download directory from settings
+    let download_dir = db.0.lock()
+        .map_err(|e| e.to_string())?
+        .get_setting("download_path")
+        .map_err(|e| e.to_string())?
+        .unwrap_or_default();
 
-    let path = PathBuf::from(&path);
+    // Validate path is within download directory
+    let path = validate_path_within_base(&path, &download_dir)?;
 
     if !path.exists() {
         return Err(format!("File not found: {}", path.display()));

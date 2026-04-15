@@ -44,3 +44,9 @@ Gelbooru Downloader 是一个基于 Tauri 2.x 的桌面应用程序，用于从 
 - Gelbooru API (非官方，通过 HTML 抓取)
 - 浏览器 Cookie 认证
 - Tauri FS/Shell 插件
+
+## Current State
+
+Phase 02 (quality-testing) complete — 190 tests passing (110 frontend Vitest + 80 Rust cargo), lint-staged pre-commit hook configured.
+
+Last updated: 2026-04-15

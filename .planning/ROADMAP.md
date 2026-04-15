@@ -38,8 +38,8 @@
 **Plans:**
 3/5 plans executed
 - [x] 02-02-PLAN.md - Frontend gallery store page state tests
-- [ ] 02-03-PLAN.md - Backend database CRUD tests with tempfile
-- [ ] 02-04-PLAN.md - Backend scraper HTML parsing tests
+- [x] 02-03-PLAN.md - Backend database CRUD tests with tempfile
+- [x] 02-04-PLAN.md - Backend scraper HTML parsing tests
 - [x] 02-05-PLAN.md - Husky pre-commit hook setup
 
 ### Phase 3: Performance & Reliability

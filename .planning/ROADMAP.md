@@ -1,6 +1,6 @@
 # Gelbooru Downloader - Roadmap
 
-**Last Updated:** 2026-04-15
+**Last Updated:** 2026-04-16
 
 ## Project Phases
 
@@ -36,7 +36,7 @@
 - 代码风格统一
 
 **Plans:**
-3/5 plans executed
+5/5 plans executed
 - [x] 02-02-PLAN.md - Frontend gallery store page state tests
 - [x] 02-03-PLAN.md - Backend database CRUD tests with tempfile
 - [x] 02-04-PLAN.md - Backend scraper HTML parsing tests
@@ -51,6 +51,12 @@
 | 3.2 | 下载重试机制 | MEDIUM | download.rs |
 | 3.3 | 大目录扫描优化 | MEDIUM | gallery.rs |
 | 3.4 | 添加请求限流 | LOW | http.rs |
+
+**Plans:**
+- [ ] 03-01-PLAN.md - imageCache lazy loading via IntersectionObserver
+- [ ] 03-02-PLAN.md - Download retry with exponential backoff (3 retries, 1s/2s/4s)
+- [ ] 03-03-PLAN.md - Async directory scan with tokio::fs + Semaphore (max 10 handles)
+- [ ] 03-04-PLAN.md - Global HTTP rate limiting (500ms gap via RwLock<Instant>)
 
 **Success Criteria:**
 - 无内存泄漏
@@ -78,8 +84,8 @@
 | Phase | Status | Notes |
 |-------|--------|-------|
 | Phase 1 | COMPLETED | 4/4 tasks done |
-| Phase 2 | IN PROGRESS | 1/5 plans complete |
-| Phase 3 | PENDING | 未开始 |
+| Phase 2 | COMPLETED | 5/5 plans done |
+| Phase 3 | READY | 0/4 plans executed |
 | Phase 4 | PENDING | 未开始 |
 
 ## Recent Commits

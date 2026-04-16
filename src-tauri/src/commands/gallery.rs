@@ -1,7 +1,7 @@
 use crate::commands::favorite_tags::DbState;
 use serde::Serialize;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::State;
 
@@ -360,57 +360,76 @@ fn canonical_path(path: PathBuf) -> PathBuf {
     path.canonicalize().unwrap_or(path)
 }
 
-/// Scan a single directory asynchronously, then spawn children in parallel.
+/// Scan a single directory asynchronously.
 /// Semaphore limits concurrent directory handles to prevent FD exhaustion.
-/// CRITICAL: Directory is read exactly ONCE. Child futures are collected first,
-/// then awaited — this avoids holding any semaphore permit across await points.
+/// Uses spawn_blocking for directory enumeration (Windows: ReadDir is not Send).
+/// Child subdirectories are traversed in parallel using std::thread::scope.
 async fn scan_dir(
     dir: PathBuf,
     sem: Arc<tokio::sync::Semaphore>,
 ) -> Option<TreeNode> {
-    // Read directory exactly once and collect all data needed
-    let mut entries = match tokio::fs::read_dir(&dir).await.ok() {
-        Some(e) => e,
-        None => return None,
-    };
+    // Acquire permit before spawn_blocking to prevent FD exhaustion deadlock
+    let _permit = sem.acquire().await.expect("semaphore closed");
+
+    // Move dir and a sem clone into spawn_blocking. The closure owns these values
+    // (Arc is Send + Clone), satisfying the 'static bound. The permit is implicitly
+    // dropped when this async fn returns, after spawn_blocking completes.
+    let dir_clone = dir.clone();
+    let sem_clone = sem.clone();
+    tokio::task::spawn_blocking(move || {
+        scan_dir_sync(dir_clone, sem_clone)
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
+/// Synchronous recursive directory scan — called from spawn_blocking.
+/// Uses std::thread::scope for parallel child subdirectory traversal.
+fn scan_dir_sync(
+    dir: PathBuf,
+    sem: Arc<tokio::sync::Semaphore>,
+) -> Option<TreeNode> {
     let mut subdirs: Vec<PathBuf> = Vec::new();
     let mut image_count: usize = 0;
     let mut first_image: Option<String> = None;
 
-    while let Some(entry) = entries.next_entry().await.ok().flatten() {
-        let path = entry.path();
-        let is_dir = entry.file_type().await.map(|ft| ft.is_dir()).unwrap_or(false);
-        if is_dir {
-            subdirs.push(path);
-        } else if is_image(&path) {
-            image_count += 1;
-            if first_image.is_none() {
-                first_image = Some(path.to_string_lossy().to_string());
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                subdirs.push(path);
+            } else if is_image(&path) {
+                image_count += 1;
+                if first_image.is_none() {
+                    first_image = Some(path.to_string_lossy().to_string());
+                }
             }
         }
     }
 
-    // Collect child futures (no semaphore held — sem is just an Arc, not a permit).
-    // Each child will acquire its own permit when it starts scanning.
-    let child_futures: Vec<_> = subdirs
-        .into_iter()
-        .map(|subdir| {
-            let sem = sem.clone();
-            tokio::spawn(async move { scan_dir(subdir, sem).await })
-        })
-        .collect();
-
-    // Await child results
     let mut children: Vec<TreeNode> = Vec::new();
-    for future in child_futures {
-        if let Ok(Some(child)) = future.await {
-            image_count += child.image_count;
-            if first_image.is_none() {
-                first_image = child.thumbnail.clone();
+
+    // Parallel child subdirectory traversal using std::thread::scope
+    std::thread::scope(|s| {
+        let handles: Vec<_> = subdirs
+            .into_iter()
+            .map(|subdir| {
+                let sem = Arc::clone(&sem);
+                s.spawn(move || scan_dir_sync(subdir, sem))
+            })
+            .collect();
+
+        for handle in handles {
+            if let Ok(Some(child)) = handle.join() {
+                image_count += child.image_count;
+                if first_image.is_none() {
+                    first_image = child.thumbnail.clone();
+                }
+                children.push(child);
             }
-            children.push(child);
         }
-    }
+    });
 
     if image_count == 0 {
         return None;
@@ -421,39 +440,55 @@ async fn scan_dir(
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| dir.to_string_lossy().to_string());
 
+    // A node is a leaf only if it has no child subdirectories with images.
+    let is_leaf = children.is_empty();
+
     Some(TreeNode {
         key: dir.to_string_lossy().to_string(),
         label: dir_name,
         path: dir.to_string_lossy().to_string(),
-        is_leaf: children.is_empty(),
+        is_leaf,
         image_count,
-        children: if children.is_empty() { None } else { Some(children) },
+        children: Some(children),
         thumbnail: first_image,
     })
 }
 
 /// Build directory tree asynchronously for a root path.
-/// Scans top-level subdirectories in parallel, each with bounded concurrency via Semaphore.
+/// The root directory is always returned as result[0] with aggregated image counts.
+/// Immediate subdirectories are scanned in parallel, each with bounded concurrency via Semaphore.
 async fn build_tree_async(root: PathBuf) -> Vec<TreeNode> {
     // Canonicalize root so all path comparisons are consistent on Windows.
     let root = canonical_path(root);
 
     let sem = Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_DIRS));
 
-    let mut root_nodes: Vec<TreeNode> = Vec::new();
-    let mut subdirs: Vec<PathBuf> = Vec::new();
-
+    // Scan root directory to find immediate subdirectories
     let mut entries = match tokio::fs::read_dir(&root).await {
         Ok(e) => e,
         Err(_) => return Vec::new(),
     };
 
+    let mut root_own_images: usize = 0;
+    let mut root_thumbnail: Option<String> = None;
+    let mut subdirs: Vec<PathBuf> = Vec::new();
+
     while let Some(entry) = entries.next_entry().await.ok().flatten() {
-        if entry.file_type().await.map(|ft| ft.is_dir()).unwrap_or(false) {
+        let ft = entry.file_type().await.map(|ft| ft.is_dir()).unwrap_or(false);
+        if ft {
             subdirs.push(entry.path());
+        } else {
+            let path = entry.path();
+            if is_image(&path) {
+                root_own_images += 1;
+                if root_thumbnail.is_none() {
+                    root_thumbnail = Some(path.to_string_lossy().to_string());
+                }
+            }
         }
     }
 
+    // Spawn parallel scans for each immediate subdirectory
     let futures: Vec<_> = subdirs
         .into_iter()
         .map(|subdir| {
@@ -462,14 +497,39 @@ async fn build_tree_async(root: PathBuf) -> Vec<TreeNode> {
         })
         .collect();
 
+    let mut child_nodes: Vec<TreeNode> = Vec::new();
+    let mut total_from_children: usize = 0;
+
     for future in futures {
         if let Ok(Some(node)) = future.await {
-            root_nodes.push(node);
+            total_from_children += node.image_count;
+            if root_thumbnail.is_none() {
+                root_thumbnail = node.thumbnail.clone();
+            }
+            child_nodes.push(node);
         }
     }
 
-    root_nodes.sort_by_key(|n| n.label.clone());
-    root_nodes
+    child_nodes.sort_by_key(|n| n.label.clone());
+
+    // Root node always included as result[0]
+    let root_name = root
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| root.to_string_lossy().to_string());
+
+    let root_node = TreeNode {
+        key: root.to_string_lossy().to_string(),
+        label: root_name,
+        path: root.to_string_lossy().to_string(),
+        is_leaf: child_nodes.is_empty(),
+        image_count: root_own_images + total_from_children,
+        children: if child_nodes.is_empty() { None } else { Some(child_nodes) },
+        thumbnail: root_thumbnail,
+    };
+
+    let result = vec![root_node];
+    result
 }
 
 /// Recursively count images in a directory with semaphore-bounded concurrency.
@@ -478,47 +538,62 @@ async fn count_dir_images(
     dir: std::path::PathBuf,
     sem: Arc<tokio::sync::Semaphore>,
 ) -> (usize, Option<String>) {
-    // Acquire permit at START (before any awaits)
-    let _permit = sem.acquire().await.expect("semaphore closed");
+    // Clone sem first so we can acquire on the clone (avoid borrow of `sem` which moves
+    // into spawn_blocking). Both Arcs point to the same underlying Semaphore — the permit
+    // is released from the correct semaphore when _permit drops.
+    let sem_clone = sem.clone();
+    let _permit = sem_clone.acquire().await.expect("semaphore closed");
 
-    let mut entries = match tokio::fs::read_dir(&dir).await.ok() {
-        Some(e) => e,
-        None => return (0, None),
-    };
+    tokio::task::spawn_blocking(move || {
+        count_dir_recursive(dir, sem)
+    })
+    .await
+    .unwrap_or((0, None))
+}
 
+/// Synchronous recursive helper — called from spawn_blocking.
+/// Uses std::thread::scope for parallel child subdirectory traversal.
+fn count_dir_recursive(
+    dir: std::path::PathBuf,
+    sem: Arc<tokio::sync::Semaphore>,
+) -> (usize, Option<String>) {
     let mut subdirs: Vec<std::path::PathBuf> = Vec::new();
     let mut count = 0;
     let mut first: Option<String> = None;
 
-    while let Some(entry) = entries.next_entry().await.ok().flatten() {
-        let path = entry.path();
-        if path.is_dir().await {
-            subdirs.push(path);
-        } else if is_image(&path) {
-            count += 1;
-            if first.is_none() {
-                first = Some(path.to_string_lossy().to_string());
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                subdirs.push(path);
+            } else if is_image(&path) {
+                count += 1;
+                if first.is_none() {
+                    first = Some(path.to_string_lossy().to_string());
+                }
             }
         }
     }
 
-    // Spawn subdirectory scans in parallel — each acquires its own permit on entry
-    let child_futures: Vec<_> = subdirs
-        .into_iter()
-        .map(|subdir| {
-            let sem = sem.clone();
-            tokio::spawn(async move { count_dir_images(subdir, sem).await })
-        })
-        .collect();
+    // Parallel child subdirectory traversal using std::thread::scope
+    std::thread::scope(|s| {
+        let handles: Vec<_> = subdirs
+            .into_iter()
+            .map(|subdir| {
+                let sem = Arc::clone(&sem);
+                s.spawn(move || count_dir_recursive(subdir, sem))
+            })
+            .collect();
 
-    for future in child_futures {
-        if let Ok((sub_count, sub_first)) = future.await {
-            count += sub_count;
-            if first.is_none() {
-                first = sub_first;
+        for handle in handles {
+            if let Ok((sub_count, sub_first)) = handle.join() {
+                count += sub_count;
+                if first.is_none() {
+                    first = sub_first;
+                }
             }
         }
-    }
+    });
 
     (count, first)
 }

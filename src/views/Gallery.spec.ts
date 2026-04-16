@@ -3,67 +3,82 @@ import { mount, flushPromises } from '@vue/test-utils';
 import { nextTick } from 'vue';
 import { LruCache } from '../utils/lruCache';
 
-// Mock @tauri-apps/api/core BEFORE importing Gallery
-vi.mock('@tauri-apps/api/core', () => {
+// ---------------------------------------------------------------------------
+// vi.hoisted — ensures variables are available during vi.mock hoisting.
+// These must be declared before any vi.mock calls.
+// ---------------------------------------------------------------------------
+const { observeSpy, unobserveSpy, disconnectSpy, takeRecordsSpy, fakeIntersectionObserver } = vi.hoisted(() => {
+  const observe = vi.fn();
+  const unobserve = vi.fn();
+  const disconnect = vi.fn();
+  const takeRecords = vi.fn(() => []);
+
+  let observerCallback: ((entries: IntersectionObserverEntry[]) => void) | null = null;
+
+  // fakeIntersectionObserver must be a vi.fn() spy so .mock.calls is accessible
+  const fakeIO = vi.fn(function (
+    this: unknown,
+    callback: (entries: IntersectionObserverEntry[]) => void
+  ) {
+    observerCallback = callback;
+    return {
+      observe,
+      unobserve,
+      disconnect,
+      takeRecords,
+    };
+  });
+
+  return { observeSpy: observe, unobserveSpy: unobserve, disconnectSpy: disconnect, takeRecordsSpy: takeRecords, fakeIntersectionObserver: fakeIO };
+});
+
+// observerCallback is declared inside vi.hoisted scope above; module-level reference not needed
+
+// ---------------------------------------------------------------------------
+// @tauri-apps/api/core mock — setup.ts handles the mock; reference its exports
+// ---------------------------------------------------------------------------
+vi.mock('@tauri-apps/api/core', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
   return {
+    ...actual,
     invoke: vi.fn(),
     convertFileSrc: vi.fn((path: string) => `mock://asset/${path}`),
   };
 });
 
-// Stub naive-ui message/dialog composables (no provider needed in tests)
-// Use importOriginal to preserve all actual component exports
+// ---------------------------------------------------------------------------
+// naive-ui mock — provides stubs for all components + mock composables
+// ---------------------------------------------------------------------------
 vi.mock('naive-ui', async (importOriginal) => {
-  const actual = await importOriginal();
+  const actual = await importOriginal<Record<string, unknown>>();
   return {
     ...actual,
     useMessage: () => ({ info: vi.fn(), success: vi.fn(), error: vi.fn(), warning: vi.fn() }),
     useDialog: () => ({ warning: vi.fn(), info: vi.fn(), error: vi.fn(), success: vi.fn() }),
+    NMessageProvider: ({ children }: { children?: unknown }) => children as ReturnType<typeof importOriginal>,
+    NDialogProvider: ({ children }: { children?: unknown }) => children as ReturnType<typeof importOriginal>,
   };
 });
 
-// --- IntersectionObserver mock (use vi.fn to track calls, expose spy for tests) ---
-const observeSpy = vi.fn();
-const unobserveSpy = vi.fn();
-const disconnectSpy = vi.fn();
-const takeRecordsSpy = vi.fn(() => []);
-
-let observerCallback: ((entries: IntersectionObserverEntry[]) => void) | null = null;
-
-const fakeIntersectionObserver = vi.fn(function (
-  this: unknown,
-  callback: (entries: IntersectionObserverEntry[]) => void
-) {
-  observerCallback = callback;
-  return {
-    observe: observeSpy,
-    unobserve: unobserveSpy,
-    disconnect: disconnectSpy,
-    takeRecords: takeRecordsSpy,
-  };
-});
-
-Object.defineProperty(window, 'IntersectionObserver', {
-  value: fakeIntersectionObserver,
-  writable: true,
-  configurable: true,
-});
-
-// Import after mocks are set up
+// ---------------------------------------------------------------------------
+// Component under test — imports AFTER mocks are established
+// ---------------------------------------------------------------------------
 import Gallery from './Gallery.vue';
 import { invoke, convertFileSrc } from '@tauri-apps/api/core';
 
 const mockInvoke = invoke as ReturnType<typeof vi.fn>;
 const mockConvertFileSrc = convertFileSrc as ReturnType<typeof vi.fn>;
 
+// Set up IntersectionObserver on window AFTER mocks are set up but BEFORE mount
+Object.defineProperty(window, 'IntersectionObserver', {
+  value: fakeIntersectionObserver,
+  writable: true,
+  configurable: true,
+});
+
 const MOCK_TREE = [
   { key: 'dir1', label: 'dir1', path: '/base/dir1', isLeaf: false, imageCount: 1, children: [] },
 ];
-const MOCK_IMAGES = {
-  subdirs: [],
-  images: [{ path: '/base/dir1/img1.jpg', name: 'img1.jpg' }],
-  total: 1,
-};
 
 const BASE_OPTS = {
   global: {
@@ -86,9 +101,7 @@ const BASE_OPTS = {
 describe('Gallery.vue — IntersectionObserver lazy loading', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    observerCallback = null;
     mockInvoke.mockReset();
-    // Safe default: get_directory_tree returns valid array; other commands return undefined
     mockInvoke.mockImplementation((cmd: string) => {
       if (cmd === 'get_directory_tree') return Promise.resolve(MOCK_TREE);
       if (cmd === 'get_local_image_base64') return Promise.resolve('mock-base64-data');
@@ -318,7 +331,7 @@ describe('Gallery.vue — IntersectionObserver lazy loading', () => {
   });
 
   // -------------------------------------------------------------------------
-  // Test 8: LRU cache is used to limit base64 entries (max 100)
+  // Test 8: LRU cache evicts oldest entry when at capacity
   // -------------------------------------------------------------------------
   it('LRU cache evicts oldest entry when at capacity', () => {
     const cache = new LruCache<string>(3);

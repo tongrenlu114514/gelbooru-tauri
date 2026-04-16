@@ -631,6 +631,379 @@ async fn persist_error_async(app: &AppHandle, id: i64, error: &str) {
     let _ = database.update_download_task_error(id, error);
 }
 
+/// Describes the outcome of a single download attempt for test mocking.
+#[cfg(test)]
+#[derive(Debug, Clone)]
+pub enum DownloadAttempt {
+    /// Transport/network error (maps to reqwest Err).
+    TransportError(String),
+    /// HTTP response with the given status code.
+    Response(u16),
+}
+
+/// Retry decision returned by the mock fetch closure.
+#[cfg(test)]
+pub type RetryFetchResult = Result<DownloadAttempt, String>;
+
+#[cfg(test)]
+const MAX_RETRIES: u32 = 3;
+#[cfg(test)]
+const BASE_DELAY_MS: u64 = 1000;
+
+/// Wraps a download with exponential-backoff retry (up to MAX_RETRIES).
+/// fetch: closure returning DownloadAttempt
+/// cancel_rx: cancellation channel
+#[cfg(test)]
+pub async fn download_with_retry<F, Fut>(
+    mut fetch: F,
+    mut cancel_rx: mpsc::Receiver<()>,
+) -> Result<DownloadAttempt, String>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = RetryFetchResult>,
+{
+    let mut attempt: u32 = 1;
+
+    loop {
+        // Race the download attempt against cancellation.
+        let outcome = tokio::select! {
+            result = fetch() => result,
+            _ = cancel_rx.recv() => return Err("cancelled".to_string()),
+        };
+
+        // If sender was dropped (channel closed), treat as cancellation.
+        if cancel_rx.is_closed() {
+            return Err("cancelled".to_string());
+        }
+
+        match outcome {
+            // Transport error — retry if attempts remain.
+            Ok(DownloadAttempt::TransportError(msg)) => {
+                if attempt >= MAX_RETRIES {
+                    // Race return against cancellation — user may cancel even at the end.
+                    tokio::select! {
+                        _ = cancel_rx.recv() => return Err("cancelled".to_string()),
+                        () = tokio::time::sleep(tokio::time::Duration::ZERO) => {
+                            if cancel_rx.is_closed() {
+                                return Err("cancelled".to_string());
+                            }
+                            return Err(format!("Request failed after {} attempt(s): {}", attempt, msg));
+                        }
+                    }
+                }
+                let delay = tokio::time::Duration::from_millis(
+                    BASE_DELAY_MS * (2_u64.saturating_pow(attempt.saturating_sub(1))),
+                );
+                tokio::select! {
+                    _ = tokio::time::sleep(delay) => {
+                        attempt += 1;
+                    }
+                    _ = cancel_rx.recv() => return Err("cancelled".to_string()),
+                }
+                // Check if sender was dropped while sleeping (recv returns None, not Err).
+                if cancel_rx.is_closed() {
+                    return Err("cancelled".to_string());
+                }
+            }
+            // HTTP response — check status.
+            Ok(DownloadAttempt::Response(status_code)) => {
+                let status = reqwest::StatusCode::from_u16(status_code)
+                    .unwrap_or(reqwest::StatusCode::INTERNAL_SERVER_ERROR);
+                if status.is_server_error() {
+                    // 5xx — retryable.
+                    if attempt >= MAX_RETRIES {
+                        // Race return against cancellation.
+                        tokio::select! {
+                            _ = cancel_rx.recv() => return Err("cancelled".to_string()),
+                            () = tokio::time::sleep(tokio::time::Duration::ZERO) => {
+                                if cancel_rx.is_closed() {
+                                    return Err("cancelled".to_string());
+                                }
+                                return Err(format!(
+                                    "Server error {} after {} retries",
+                                    status,
+                                    MAX_RETRIES
+                                ));
+                            }
+                        }
+                    }
+                    let delay = tokio::time::Duration::from_millis(
+                        BASE_DELAY_MS * (2_u64.saturating_pow(attempt.saturating_sub(1))),
+                    );
+                    tokio::select! {
+                        _ = tokio::time::sleep(delay) => {
+                            attempt += 1;
+                        }
+                        _ = cancel_rx.recv() => return Err("cancelled".to_string()),
+                    }
+                    // Check if sender was dropped while sleeping.
+                    if cancel_rx.is_closed() {
+                        return Err("cancelled".to_string());
+                    }
+                } else {
+                    // 2xx or 4xx — do not retry.
+                    return Ok(DownloadAttempt::Response(status_code));
+                }
+            }
+            // Logic error from test mock.
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+#[cfg(test)]
+mod download_with_retry_tests {
+    use super::*;
+
+    /// Helper: makes a reqwest Response that implements bytes_stream().
+    fn mock_attempt(status: u16) -> DownloadAttempt {
+        DownloadAttempt::Response(status)
+    }
+
+    // -------------------------------------------------------------------------
+    // Test 1: succeeds on first attempt (no retry needed)
+    // -------------------------------------------------------------------------
+    #[tokio::test]
+    async fn succeeds_on_first_attempt() {
+        let (_tx, rx) = mpsc::channel(1);
+        let result = download_with_retry(|| async { Ok(mock_attempt(200)) }, rx).await;
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap(), DownloadAttempt::Response(200)));
+    }
+
+    // -------------------------------------------------------------------------
+    // Test 2: retries on transport error, succeeds after retry
+    // -------------------------------------------------------------------------
+    #[tokio::test]
+    async fn retries_on_transport_error_succeeds_on_retry() {
+        tokio::time::pause();
+        let (tx, rx) = mpsc::channel(1);
+
+        let attempt_count = std::sync::atomic::AtomicU32::new(0);
+        let attempt_count_clone = &attempt_count;
+
+        let result = download_with_retry(
+            || {
+                let cnt = attempt_count_clone;
+                let tx = tx.clone();
+                async move {
+                    cnt.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    // Fail first time, succeed second time.
+                    if cnt.load(std::sync::atomic::Ordering::SeqCst) == 1 {
+                        Ok(DownloadAttempt::TransportError("timeout".to_string()))
+                    } else {
+                        drop(tx); // Close channel to prevent hanging.
+                        Ok(mock_attempt(200))
+                    }
+                }
+            },
+            rx,
+        )
+        .await;
+
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap(), DownloadAttempt::Response(200)));
+        assert_eq!(attempt_count.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    // -------------------------------------------------------------------------
+    // Test 3: does NOT retry on 4xx — returns immediately
+    // -------------------------------------------------------------------------
+    #[tokio::test]
+    async fn does_not_retry_on_4xx() {
+        tokio::time::pause();
+        let attempt_count = std::sync::atomic::AtomicU32::new(0);
+        let attempt_count_clone = &attempt_count;
+        let (tx, rx) = mpsc::channel(1);
+
+        let result = download_with_retry(
+            || {
+                let cnt = attempt_count_clone;
+                async move {
+                    cnt.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    Ok(mock_attempt(404))
+                }
+            },
+            rx,
+        )
+        .await;
+
+        // Should return immediately without retry.
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap(), DownloadAttempt::Response(404)));
+        assert_eq!(attempt_count.load(std::sync::atomic::Ordering::SeqCst), 1);
+        drop(tx);
+    }
+
+    // -------------------------------------------------------------------------
+    // Test 4: retries on 5xx, succeeds after retry
+    // -------------------------------------------------------------------------
+    #[tokio::test]
+    async fn retries_on_5xx_succeeds_on_retry() {
+        tokio::time::pause();
+        let (tx, rx) = mpsc::channel(1);
+        let attempt_count = std::sync::atomic::AtomicU32::new(0);
+        let attempt_count_clone = &attempt_count;
+
+        let result = download_with_retry(
+            || {
+                let cnt = attempt_count_clone;
+                let tx = tx.clone();
+                async move {
+                    cnt.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    if cnt.load(std::sync::atomic::Ordering::SeqCst) == 1 {
+                        Ok(mock_attempt(502))
+                    } else {
+                        drop(tx);
+                        Ok(mock_attempt(200))
+                    }
+                }
+            },
+            rx,
+        )
+        .await;
+
+        assert!(result.is_ok());
+        assert!(matches!(result.unwrap(), DownloadAttempt::Response(200)));
+        assert_eq!(attempt_count.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    // -------------------------------------------------------------------------
+    // Test 5: respects cancellation during retry sleep — exits without waiting
+    // -------------------------------------------------------------------------
+    #[tokio::test]
+    async fn respects_cancellation_during_retry_sleep() {
+        tokio::time::pause();
+
+        // Use mpsc so we can .send() synchronously (not async like oneshot).
+        let (cancel_tx, cancel_rx) = mpsc::channel::<()>(1);
+
+        let attempt_count = std::sync::atomic::AtomicU32::new(0);
+        let attempt_count_clone = &attempt_count;
+
+        // Spawn a task that drops the sender after a virtual delay.
+        // This simulates the user cancelling during the backoff sleep.
+        tokio::spawn(async move {
+            // We need the sender to be dropped DURING the download's first sleep (1000ms).
+            // Calculate deadline = now + 800ms. At t=800, the download is still in
+            // its first sleep (which started at t=0 and lasts until t=1000).
+            let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_millis(800);
+            tokio::time::sleep_until(deadline).await;
+            drop(cancel_tx);
+        });
+
+        let result = download_with_retry(
+            || {
+                let cnt = attempt_count_clone;
+                async move {
+                    cnt.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    // Always fail — cancellation should interrupt the backoff sleep.
+                    Ok(DownloadAttempt::TransportError("timeout".to_string()))
+                }
+            },
+            cancel_rx,
+        )
+        .await;
+
+        // Should be cancelled, not error after waiting for full delay.
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "cancelled");
+        // Only 1 attempt made — the second would happen after the sleep,
+        // but cancellation arrived during the sleep and stopped the loop.
+        assert_eq!(attempt_count.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    // -------------------------------------------------------------------------
+    // Test 6: after MAX_RETRIES exhausted on retryable error, returns error
+    // -------------------------------------------------------------------------
+    #[tokio::test]
+    async fn returns_error_after_max_retries_exhausted() {
+        tokio::time::pause();
+        let (tx, rx) = mpsc::channel(1);
+
+        let result = download_with_retry(
+            || async { Ok(DownloadAttempt::TransportError("persistent failure".to_string())) },
+            rx,
+        )
+        .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("persistent failure"));
+        assert!(err.contains("3 attempt")); // 3 total attempts (1 initial + 2 retries).
+        drop(tx);
+    }
+
+    // -------------------------------------------------------------------------
+    // Test 7: backoff delays are 1s, 2s, 4s for attempts 1, 2, 3 respectively
+    // -------------------------------------------------------------------------
+    #[tokio::test]
+    async fn backoff_delays_are_1s_2s_4s() {
+        tokio::time::pause();
+        let (tx, rx) = mpsc::channel(1);
+
+        let attempt_count = std::sync::atomic::AtomicU32::new(0);
+        let tx_clone = tx.clone();
+
+        let start = tokio::time::Instant::now();
+
+        let result = download_with_retry(
+            || {
+                let cnt = &attempt_count;
+                let tx = tx_clone.clone();
+                async move {
+                    let n = cnt.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    if n < 2 {
+                        // Attempts 1 and 2 fail (n=0, n=1), attempt 3 (n=2) succeeds.
+                        Ok(DownloadAttempt::TransportError("fail".to_string()))
+                    } else {
+                        drop(tx);
+                        Ok(mock_attempt(200))
+                    }
+                }
+            },
+            rx,
+        )
+        .await;
+
+        let elapsed = start.elapsed();
+
+        assert!(result.is_ok());
+        // After 3 attempts (1 initial + 2 retries), delays should be 1s + 2s = 3s total.
+        assert!(
+            elapsed >= tokio::time::Duration::from_secs(3),
+            "Expected at least 3s elapsed (1s + 2s delays), got {:?}",
+            elapsed
+        );
+        assert!(
+            elapsed < tokio::time::Duration::from_secs(4),
+            "Should not have waited for the 3rd delay (4s) since 3rd attempt succeeded"
+        );
+        drop(tx);
+    }
+
+    // -------------------------------------------------------------------------
+    // Test 8: does not retry on 5xx after max retries — returns server error
+    // -------------------------------------------------------------------------
+    #[tokio::test]
+    async fn returns_server_error_after_max_retries_on_5xx() {
+        tokio::time::pause();
+        let (tx, rx) = mpsc::channel(1);
+
+        let result = download_with_retry(
+            || async { Ok(mock_attempt(503)) },
+            rx,
+        )
+        .await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("503"));
+        assert!(err.contains("retries"));
+        drop(tx);
+    }
+}
+
 #[tauri::command]
 pub async fn open_file(db: State<'_, DbState>, path: String) -> Result<(), String> {
     // Get download directory from settings

@@ -1,7 +1,8 @@
 use crate::commands::favorite_tags::DbState;
 use serde::Serialize;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use tauri::State;
 
 /// Sanitize a path by removing dangerous components
@@ -274,94 +275,7 @@ pub async fn get_directory_tree(
         db_path
     };
 
-    let result = tokio::task::spawn_blocking(move || {
-        let path = PathBuf::from(&path_str);
-
-        if !path.exists() {
-            return Vec::new();
-        }
-
-        fn build_tree(dir: &PathBuf, _base_path: &str) -> Option<TreeNode> {
-            if !dir.exists() || !dir.is_dir() {
-                return None;
-            }
-
-            let mut children: Vec<TreeNode> = Vec::new();
-            let mut image_count = 0usize;
-            let mut first_image: Option<String> = None;
-
-            if let Ok(entries) = fs::read_dir(dir) {
-                let mut entries: Vec<_> = entries.filter_map(|e| e.ok()).collect();
-                entries.sort_by_key(|e| e.file_name());
-
-                for entry in entries {
-                    let entry_path = entry.path();
-
-                    if entry_path.is_dir() {
-                        if let Some(child_node) = build_tree(&entry_path, _base_path) {
-                            image_count += child_node.image_count;
-                            if first_image.is_none() {
-                                first_image = child_node.thumbnail.clone();
-                            }
-                            children.push(child_node);
-                        }
-                    } else if let Some(ext) = entry_path.extension() {
-                        let ext = ext.to_string_lossy().to_lowercase();
-                        if ["jpg", "jpeg", "png", "gif", "webp"].contains(&ext.as_str()) {
-                            image_count += 1;
-                            if first_image.is_none() {
-                                first_image = Some(entry_path.to_string_lossy().to_string());
-                            }
-                        }
-                    }
-                }
-            }
-
-            if image_count == 0 {
-                return None;
-            }
-
-            let dir_name = dir
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| dir.to_string_lossy().to_string());
-
-            let relative_path = dir.to_string_lossy().to_string();
-
-            Some(TreeNode {
-                key: relative_path.clone(),
-                label: dir_name,
-                path: relative_path,
-                is_leaf: children.is_empty(),
-                image_count,
-                children: if children.is_empty() {
-                    None
-                } else {
-                    Some(children)
-                },
-                thumbnail: first_image,
-            })
-        }
-
-        let mut result = Vec::new();
-        if let Ok(entries) = fs::read_dir(&path) {
-            let mut entries: Vec<_> = entries.filter_map(|e| e.ok()).collect();
-            entries.sort_by_key(|e| e.file_name());
-
-            for entry in entries {
-                let entry_path = entry.path();
-                if entry_path.is_dir() {
-                    if let Some(node) = build_tree(&entry_path, &path_str) {
-                        result.push(node);
-                    }
-                }
-            }
-        }
-
-        result
-    })
-    .await
-    .map_err(|e| e.to_string())?;
+    let result = build_tree_async(PathBuf::from(&path_str)).await;
 
     Ok(result)
 }
@@ -371,107 +285,7 @@ pub async fn get_directory_images(dir_path: String) -> Result<DirectoryImages, S
     // Validate path for security
     validate_path(&dir_path)?;
 
-    let result = tokio::task::spawn_blocking(move || {
-        let path = PathBuf::from(&dir_path);
-
-        if !path.exists() || !path.is_dir() {
-            return DirectoryImages {
-                subdirs: Vec::new(),
-                images: Vec::new(),
-                total: 0,
-            };
-        }
-
-        let mut subdirs: Vec<SubDirInfo> = Vec::new();
-        let mut images_with_time: Vec<(String, std::time::SystemTime)> = Vec::new();
-
-        if let Ok(entries) = fs::read_dir(&path) {
-            let mut entries: Vec<_> = entries.filter_map(|e| e.ok()).collect();
-            entries.sort_by_key(|e| e.file_name());
-
-            for entry in entries {
-                let entry_path = entry.path();
-
-                if entry_path.is_dir() {
-                    // Count images in subdirectory and find first image as thumbnail
-                    let mut sub_image_count = 0usize;
-                    let mut first_image: Option<String> = None;
-
-                    fn count_images_in_dir(
-                        dir: &PathBuf,
-                        count: &mut usize,
-                        first: &mut Option<String>,
-                    ) {
-                        if let Ok(entries) = fs::read_dir(dir) {
-                            for entry in entries.filter_map(|e| e.ok()) {
-                                let p = entry.path();
-                                if p.is_dir() {
-                                    count_images_in_dir(&p, count, first);
-                                } else if let Some(ext) = p.extension() {
-                                    let ext = ext.to_string_lossy().to_lowercase();
-                                    if ["jpg", "jpeg", "png", "gif", "webp"].contains(&ext.as_str())
-                                    {
-                                        *count += 1;
-                                        if first.is_none() {
-                                            *first = Some(p.to_string_lossy().to_string());
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    count_images_in_dir(&entry_path, &mut sub_image_count, &mut first_image);
-
-                    if sub_image_count > 0 {
-                        let dir_name = entry_path
-                            .file_name()
-                            .map(|n| n.to_string_lossy().to_string())
-                            .unwrap_or_else(|| "未命名".to_string());
-
-                        subdirs.push(SubDirInfo {
-                            path: entry_path.to_string_lossy().to_string(),
-                            name: dir_name,
-                            image_count: sub_image_count,
-                            thumbnail: first_image,
-                        });
-                    }
-                } else if entry_path.is_file() {
-                    if let Some(ext) = entry_path.extension() {
-                        let ext = ext.to_string_lossy().to_lowercase();
-                        if ["jpg", "jpeg", "png", "gif", "webp"].contains(&ext.as_str()) {
-                            let mtime = fs::metadata(&entry_path)
-                                .ok()
-                                .and_then(|m| m.modified().ok())
-                                .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-                            images_with_time
-                                .push((entry_path.to_string_lossy().to_string(), mtime));
-                        }
-                    }
-                }
-            }
-        }
-
-        images_with_time.sort_by(|a, b| b.1.cmp(&a.1));
-
-        let images: Vec<ImageInfo> = images_with_time
-            .into_iter()
-            .map(|(path, _)| {
-                let name = path.rsplit(['/', '\\']).next().unwrap_or(&path).to_string();
-                ImageInfo { path, name }
-            })
-            .collect();
-
-        let total = images.len();
-
-        DirectoryImages {
-            subdirs,
-            images,
-            total,
-        }
-    })
-    .await
-    .map_err(|e| e.to_string())?;
+    let result = get_directory_images_async(PathBuf::from(&dir_path)).await;
 
     Ok(result)
 }
@@ -527,6 +341,255 @@ pub async fn get_local_image_base64(
     .map_err(|e| e.to_string())?;
 
     result
+}
+
+const MAX_CONCURRENT_DIRS: usize = 10;
+
+/// Returns true if the given path has an image extension (case-insensitive).
+fn is_image(path: &std::path::Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| ["jpg", "jpeg", "png", "gif", "webp"].contains(&e.to_lowercase().as_str()))
+        .unwrap_or(false)
+}
+
+/// Canonicalize a path, falling back to the original if canonicalization fails.
+/// This normalizes Windows short-path names (e.g. `ADMINI~1`) to long names
+/// so they match what `fs::read_dir` returns on this platform.
+fn canonical_path(path: PathBuf) -> PathBuf {
+    path.canonicalize().unwrap_or(path)
+}
+
+/// Scan a single directory asynchronously, then spawn children in parallel.
+/// Semaphore limits concurrent directory handles to prevent FD exhaustion.
+/// CRITICAL: Directory is read exactly ONCE. Child futures are collected first,
+/// then awaited — this avoids holding any semaphore permit across await points.
+async fn scan_dir(
+    dir: PathBuf,
+    sem: Arc<tokio::sync::Semaphore>,
+) -> Option<TreeNode> {
+    // Read directory exactly once and collect all data needed
+    let mut entries = match tokio::fs::read_dir(&dir).await.ok() {
+        Some(e) => e,
+        None => return None,
+    };
+    let mut subdirs: Vec<PathBuf> = Vec::new();
+    let mut image_count: usize = 0;
+    let mut first_image: Option<String> = None;
+
+    while let Some(entry) = entries.next_entry().await.ok().flatten() {
+        let path = entry.path();
+        let is_dir = entry.file_type().await.map(|ft| ft.is_dir()).unwrap_or(false);
+        if is_dir {
+            subdirs.push(path);
+        } else if is_image(&path) {
+            image_count += 1;
+            if first_image.is_none() {
+                first_image = Some(path.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    // Collect child futures (no semaphore held — sem is just an Arc, not a permit).
+    // Each child will acquire its own permit when it starts scanning.
+    let child_futures: Vec<_> = subdirs
+        .into_iter()
+        .map(|subdir| {
+            let sem = sem.clone();
+            tokio::spawn(async move { scan_dir(subdir, sem).await })
+        })
+        .collect();
+
+    // Await child results
+    let mut children: Vec<TreeNode> = Vec::new();
+    for future in child_futures {
+        if let Ok(Some(child)) = future.await {
+            image_count += child.image_count;
+            if first_image.is_none() {
+                first_image = child.thumbnail.clone();
+            }
+            children.push(child);
+        }
+    }
+
+    if image_count == 0 {
+        return None;
+    }
+
+    let dir_name = dir
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| dir.to_string_lossy().to_string());
+
+    Some(TreeNode {
+        key: dir.to_string_lossy().to_string(),
+        label: dir_name,
+        path: dir.to_string_lossy().to_string(),
+        is_leaf: children.is_empty(),
+        image_count,
+        children: if children.is_empty() { None } else { Some(children) },
+        thumbnail: first_image,
+    })
+}
+
+/// Build directory tree asynchronously for a root path.
+/// Scans top-level subdirectories in parallel, each with bounded concurrency via Semaphore.
+async fn build_tree_async(root: PathBuf) -> Vec<TreeNode> {
+    // Canonicalize root so all path comparisons are consistent on Windows.
+    let root = canonical_path(root);
+
+    let sem = Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_DIRS));
+
+    let mut root_nodes: Vec<TreeNode> = Vec::new();
+    let mut subdirs: Vec<PathBuf> = Vec::new();
+
+    let mut entries = match tokio::fs::read_dir(&root).await {
+        Ok(e) => e,
+        Err(_) => return Vec::new(),
+    };
+
+    while let Some(entry) = entries.next_entry().await.ok().flatten() {
+        if entry.file_type().await.map(|ft| ft.is_dir()).unwrap_or(false) {
+            subdirs.push(entry.path());
+        }
+    }
+
+    let futures: Vec<_> = subdirs
+        .into_iter()
+        .map(|subdir| {
+            let sem = sem.clone();
+            tokio::spawn(async move { scan_dir(subdir, sem).await })
+        })
+        .collect();
+
+    for future in futures {
+        if let Ok(Some(node)) = future.await {
+            root_nodes.push(node);
+        }
+    }
+
+    root_nodes.sort_by_key(|n| n.label.clone());
+    root_nodes
+}
+
+/// Recursively count images in a directory with semaphore-bounded concurrency.
+/// Acquires the permit at START (before any awaits) to prevent deadlock in deep trees.
+async fn count_dir_images(
+    dir: std::path::PathBuf,
+    sem: Arc<tokio::sync::Semaphore>,
+) -> (usize, Option<String>) {
+    // Acquire permit at START (before any awaits)
+    let _permit = sem.acquire().await.expect("semaphore closed");
+
+    let mut entries = match tokio::fs::read_dir(&dir).await.ok() {
+        Some(e) => e,
+        None => return (0, None),
+    };
+
+    let mut subdirs: Vec<std::path::PathBuf> = Vec::new();
+    let mut count = 0;
+    let mut first: Option<String> = None;
+
+    while let Some(entry) = entries.next_entry().await.ok().flatten() {
+        let path = entry.path();
+        if path.is_dir().await {
+            subdirs.push(path);
+        } else if is_image(&path) {
+            count += 1;
+            if first.is_none() {
+                first = Some(path.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    // Spawn subdirectory scans in parallel — each acquires its own permit on entry
+    let child_futures: Vec<_> = subdirs
+        .into_iter()
+        .map(|subdir| {
+            let sem = sem.clone();
+            tokio::spawn(async move { count_dir_images(subdir, sem).await })
+        })
+        .collect();
+
+    for future in child_futures {
+        if let Ok((sub_count, sub_first)) = future.await {
+            count += sub_count;
+            if first.is_none() {
+                first = sub_first;
+            }
+        }
+    }
+
+    (count, first)
+}
+
+/// Count images in a directory asynchronously (top-level wrapper with its own semaphore).
+async fn count_images_async(dir: std::path::PathBuf) -> (usize, Option<String>) {
+    let sem = Arc::new(tokio::sync::Semaphore::new(MAX_CONCURRENT_DIRS));
+    count_dir_images(dir, sem).await
+}
+
+/// List subdirectories and images for a given directory path asynchronously.
+async fn get_directory_images_async(dir_path: std::path::PathBuf) -> DirectoryImages {
+    let mut subdirs: Vec<SubDirInfo> = Vec::new();
+    let mut images_with_time: Vec<(String, std::time::SystemTime)> = Vec::new();
+
+    let mut entries = match tokio::fs::read_dir(&dir_path).await {
+        Ok(e) => e,
+        Err(_) => {
+            return DirectoryImages {
+                subdirs,
+                images: Vec::new(),
+                total: 0,
+            }
+        }
+    };
+
+    while let Some(entry) = entries.next_entry().await.ok().flatten() {
+        let path = entry.path();
+        let metadata = match tokio::fs::metadata(&path).await.ok() {
+            Some(m) => m,
+            None => continue,
+        };
+
+        if metadata.is_dir() {
+            let (count, first) = count_images_async(path.clone()).await;
+            if count > 0 {
+                let dir_name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "未命名".to_string());
+                subdirs.push(SubDirInfo {
+                    path: path.to_string_lossy().to_string(),
+                    name: dir_name,
+                    image_count: count,
+                    thumbnail: first,
+                });
+            }
+        } else if is_image(&path) {
+            let mtime = metadata
+                .modified()
+                .ok()
+                .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+            images_with_time.push((path.to_string_lossy().to_string(), mtime));
+        }
+    }
+
+    images_with_time.sort_by(|a, b| b.1.cmp(&a.1));
+    let images: Vec<ImageInfo> = images_with_time
+        .into_iter()
+        .map(|(path, _)| {
+            let name = path.rsplit(['/', '\\']).next().unwrap_or(&path).to_string();
+            ImageInfo { path, name }
+        })
+        .collect();
+
+    let total = images.len();
+    DirectoryImages {
+        subdirs,
+        images,
+        total,
+    }
 }
 
 #[cfg(test)]
@@ -614,5 +677,149 @@ mod tests {
     fn validate_path_with_special_characters() {
         // Hyphen, underscore, and numbers should be allowed
         assert!(validate_path("path/to/my-file_123.EXT").is_ok());
+    }
+
+    // -------------------------------------------------------------------------
+    // Async directory scan tests
+    // -------------------------------------------------------------------------
+
+    fn create_test_tree(depth: usize, dirs_per_level: usize, images_per_dir: usize) -> tempfile::TempDir {
+        use std::fs;
+        let temp = tempfile::TempDir::new().unwrap();
+        fn populate(dir: &std::path::Path, d: usize, max_d: usize, dirs: usize, imgs: usize) {
+            if d > max_d { return; }
+            for i in 0..imgs {
+                let _ = fs::write(dir.join(format!("img_{}.jpg", i)), b"fake");
+            }
+            for i in 0..dirs {
+                let subdir = dir.join(format!("subdir_{}", i));
+                let _ = fs::create_dir_all(&subdir);
+                populate(&subdir, d + 1, max_d, dirs, imgs);
+            }
+        }
+        populate(temp.path(), 0, depth, dirs_per_level, images_per_dir);
+        temp
+    }
+
+    #[tokio::test]
+    async fn build_tree_async_returns_empty_for_nonexistent_dir() {
+        let result = super::build_tree_async(std::path::PathBuf::from("/nonexistent/path"));
+        assert!(result.await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn build_tree_async_counts_all_images_in_nested_dirs() {
+        // depth=2 creates levels 0, 1, 2
+        // level 0: 3 images; level 1: 2*3=6 images; level 2: 4*3=12 images
+        // Total: 3 + 6 + 12 = 21 images
+        let temp = create_test_tree(2, 2, 3);
+        let result = super::build_tree_async(temp.path().to_path_buf()).await;
+        // Root's image_count includes all levels
+        assert_eq!(result[0].image_count, 21);
+    }
+
+    #[tokio::test]
+    async fn build_tree_async_sets_is_leaf_correctly() {
+        // depth=1: root with 2 subdirs (each has 1 image)
+        // Root is not a leaf (has children); its children are leaves
+        let temp = create_test_tree(1, 2, 1);
+        let result = super::build_tree_async(temp.path().to_path_buf()).await;
+        // Root has children, so it is not a leaf
+        assert!(!result[0].is_leaf, "Root node should not be a leaf (has subdirs)");
+        if let Some(children) = &result[0].children {
+            for child in children {
+                assert!(child.is_leaf, "Leaf dirs with no subdirs should have is_leaf=true");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn build_tree_async_image_count_sums_children_and_own() {
+        // depth=1 creates root with 2 subdirs (subdir_0, subdir_1), each empty
+        // Patch 2 images to root, and add images to subdirs
+        let temp = create_test_tree(1, 2, 0);
+        {
+            use std::fs;
+            // Add 2 images to root
+            let _ = fs::write(temp.path().join("root_1.jpg"), b"fake");
+            let _ = fs::write(temp.path().join("root_2.jpg"), b"fake");
+            // Add 3 images to subdir_0
+            let sub0 = temp.path().join("subdir_0");
+            let _ = fs::write(sub0.join("a.jpg"), b"fake");
+            let _ = fs::write(sub0.join("b.jpg"), b"fake");
+            let _ = fs::write(sub0.join("c.jpg"), b"fake");
+            // Add 1 image to subdir_1
+            let sub1 = temp.path().join("subdir_1");
+            let _ = fs::write(sub1.join("d.jpg"), b"fake");
+        }
+        let result: Vec<TreeNode> = super::build_tree_async(temp.path().to_path_buf()).await;
+        // Root's image_count = own (2) + subdir_0 (3) + subdir_1 (1) = 6
+        assert_eq!(result[0].image_count, 6);
+    }
+
+    #[tokio::test]
+    async fn build_tree_async_sets_first_image_as_thumbnail() {
+        let temp = create_test_tree(1, 1, 2);
+        let result = super::build_tree_async(temp.path().to_path_buf()).await;
+        let thumbnail = &result[0].thumbnail;
+        assert!(thumbnail.is_some(), "Should have a thumbnail (first image path)");
+        let thumb = thumbnail.as_ref().unwrap();
+        assert!(thumb.ends_with(".jpg"), "Thumbnail should be a .jpg path");
+    }
+
+    #[tokio::test]
+    async fn build_tree_async_deep_tree_no_deadlock() {
+        // depth=20, 1 subdir per level, 1 image per dir = 21 total (levels 0..20)
+        // This should complete within 30 seconds or it's a deadlock
+        let temp = create_test_tree(20, 1, 1);
+        let start = std::time::Instant::now();
+        let result: Vec<TreeNode> = super::build_tree_async(temp.path().to_path_buf()).await;
+        let elapsed = start.elapsed();
+        let total: usize = result.iter().map(|n| n.image_count).sum();
+        assert_eq!(total, 21, "Should have counted 21 images in 20-level deep tree");
+        assert!(elapsed.as_secs() < 30, "Deep tree scan took >30s — possible deadlock");
+    }
+
+    #[tokio::test]
+    async fn get_directory_images_async_returns_correct_subdirs_and_images() {
+        use std::fs;
+        let temp = tempfile::TempDir::new().unwrap();
+        // Create subdirs with images
+        let sub_a = temp.path().join("subdir_a");
+        fs::create_dir_all(&sub_a).unwrap();
+        fs::write(sub_a.join("a1.jpg"), b"fake").unwrap();
+        fs::write(sub_a.join("a2.png"), b"fake").unwrap();
+        // Create subdir with no images
+        let sub_b = temp.path().join("subdir_b");
+        fs::create_dir_all(&sub_b).unwrap();
+        // Create direct images in root
+        fs::write(temp.path().join("direct.jpg"), b"fake").unwrap();
+        fs::write(temp.path().join("direct.gif"), b"fake").unwrap();
+
+        let result = super::get_directory_images_async(temp.path().to_path_buf()).await;
+        assert_eq!(result.total, 2, "Root should have 2 direct images");
+        assert_eq!(result.subdirs.len(), 1, "Only subdir_a has images, subdir_b is excluded");
+        assert_eq!(result.subdirs[0].image_count, 2, "subdir_a should have 2 images");
+    }
+
+    // is_image helper test
+    #[test]
+    fn is_image_supports_supported_extensions() {
+        use super::is_image;
+        use std::path::Path;
+        for ext in &["jpg", "jpeg", "png", "gif", "webp"] {
+            let p = Path::new("test.").join(format!("file.{}", ext));
+            assert!(is_image(&p), "Extension '{}' should be recognized as image", ext);
+        }
+    }
+
+    #[test]
+    fn is_image_rejects_unsupported_extensions() {
+        use super::is_image;
+        use std::path::Path;
+        for ext in &["txt", "pdf", "html", "exe"] {
+            let p = Path::new("test.").join(format!("file.{}", ext));
+            assert!(!is_image(&p), "Extension '{}' should NOT be recognized as image", ext);
+        }
     }
 }

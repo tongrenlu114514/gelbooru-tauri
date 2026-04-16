@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, h } from 'vue';
+import { ref, onMounted, onUnmounted, computed, nextTick, h } from 'vue';
 import {
   NEmpty,
   NButton,
@@ -43,18 +43,38 @@ function getImageSrc(path: string): string {
   return convertFileSrc(path.replace(/\\/g, '/'));
 }
 
-// 预加载图片列表的 base64（使用 LRU 缓存，自动限制内存使用）
-async function preloadImages(paths: string[]) {
-  for (const path of paths) {
-    if (!imageBase64Cache.has(path)) {
-      try {
-        const base64 = await invoke<string>('get_local_image_base64', { path });
-        imageBase64Cache.set(path, base64);
-      } catch (err) {
-        console.warn('Failed to preload image:', path, err);
+// IntersectionObserver ref — null until component mounts
+const observerRef = ref<IntersectionObserver | null>(null);
+
+// Observe callback: load base64 only for visible images
+function observeCallback(entries: IntersectionObserverEntry[]) {
+  entries.forEach((entry) => {
+    if (entry.isIntersecting) {
+      const path = (entry.target as HTMLElement).dataset.imagePath;
+      if (path) {
+        loadImageBase64(path);
       }
     }
+  });
+}
+
+// Load image as base64 and cache it (only if not already cached)
+async function loadImageBase64(path: string) {
+  if (imageBase64Cache.has(path)) return;
+  try {
+    const base64 = await invoke<string>('get_local_image_base64', { path });
+    imageBase64Cache.set(path, base64);
+  } catch (err) {
+    console.warn('Failed to load image base64:', path, err);
   }
+}
+
+// Observe all image cards using IntersectionObserver (viewport-aware lazy loading)
+function loadVisibleImages() {
+  const grid = document.querySelector('.content-grid');
+  if (!grid || !observerRef.value) return;
+  const cards = grid.querySelectorAll<HTMLElement>('[data-image-path]');
+  cards.forEach((card) => observerRef.value!.observe(card));
 }
 
 interface ImageInfo {
@@ -249,13 +269,9 @@ async function loadImagesForDirectory(dirPath: string) {
     subdirs.value = result.subdirs;
     images.value = result.images;
 
-    // 预加载图片（后台执行，不阻塞 UI）
-    const allPaths = [
-      ...result.images.map((img) => img.path),
-      ...result.subdirs.filter((s) => s.thumbnail).map((s) => s.thumbnail!),
-    ];
-    // 异步预加载，不等待
-    preloadImages(allPaths);
+    // Observe newly rendered image cards for viewport-based lazy loading
+    await nextTick();
+    loadVisibleImages();
   } catch (error) {
     console.error('Failed to load images:', error);
     subdirs.value = [];
@@ -290,6 +306,7 @@ function enterSubdir(subdir: SubDirInfo) {
 }
 
 async function refresh() {
+  observerRef.value?.disconnect();
   selectedKey.value = null;
   subdirs.value = [];
   images.value = [];
@@ -299,7 +316,19 @@ async function refresh() {
 onMounted(() => {
   loadTree();
   window.addEventListener('keydown', handleKeydown);
+  observerRef.value = new IntersectionObserver(observeCallback, {
+    root: null,
+    rootMargin: '200px',
+    threshold: 0.01,
+  });
 });
+
+onUnmounted(() => {
+  observerRef.value?.disconnect();
+});
+
+// Expose loadVisibleImages for testing via template ref / wrapper.vm
+defineExpose({ loadVisibleImages });
 </script>
 
 <template>
@@ -342,6 +371,7 @@ onMounted(() => {
               v-for="subdir in subdirs"
               :key="subdir.path"
               class="folder-card"
+              :data-image-path="subdir.thumbnail"
               @click="enterSubdir(subdir)"
             >
               <div class="folder-preview">
@@ -364,6 +394,7 @@ onMounted(() => {
               v-for="(img, index) in images"
               :key="img.path"
               class="image-card"
+              :data-image-path="img.path"
               @click="openPreview(index)"
             >
               <img

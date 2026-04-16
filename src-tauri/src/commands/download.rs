@@ -83,7 +83,10 @@ pub struct DownloadProgressEvent {
 pub struct DownloadManager {
     tasks: RwLock<HashMap<u32, DownloadTask>>,
     semaphore: Semaphore,
+    /// Sends pause/cancel signals into active download tasks.
     cancel_tokens: RwLock<HashMap<u32, mpsc::Sender<()>>>,
+    /// Sends only pause signals (soft-stop, preserves partial file).
+    pause_tokens: RwLock<HashMap<u32, mpsc::Sender<()>>>,
 }
 
 impl DownloadManager {
@@ -92,6 +95,7 @@ impl DownloadManager {
             tasks: RwLock::new(HashMap::new()),
             semaphore: Semaphore::new(3), // 默认 3 个并发
             cancel_tokens: RwLock::new(HashMap::new()),
+            pause_tokens: RwLock::new(HashMap::new()),
         }
     }
 
@@ -141,18 +145,34 @@ impl DownloadManager {
         }
     }
 
-    pub async fn add_cancel_token(&self, id: u32, sender: mpsc::Sender<()>) {
-        let mut tokens = self.cancel_tokens.write().await;
-        tokens.insert(id, sender);
+    pub async fn add_task_token(&self, id: u32, cancel_tx: mpsc::Sender<()>, pause_tx: mpsc::Sender<()>) {
+        let mut cancel_tokens = self.cancel_tokens.write().await;
+        cancel_tokens.insert(id, cancel_tx);
+        let mut pause_tokens = self.pause_tokens.write().await;
+        pause_tokens.insert(id, pause_tx);
     }
 
-    pub async fn remove_cancel_token(&self, id: u32) {
-        let mut tokens = self.cancel_tokens.write().await;
-        tokens.remove(&id);
+    pub async fn remove_task_token(&self, id: u32) {
+        let mut cancel_tokens = self.cancel_tokens.write().await;
+        cancel_tokens.remove(&id);
+        let mut pause_tokens = self.pause_tokens.write().await;
+        pause_tokens.remove(&id);
     }
 
+    /// Sends a cancellation signal. Used by cancel_download.
     pub async fn cancel_task(&self, id: u32) -> bool {
         let tokens = self.cancel_tokens.read().await;
+        if let Some(sender) = tokens.get(&id) {
+            let _ = sender.send(()).await;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Sends a pause signal. Used by pause_download.
+    pub async fn pause_task(&self, id: u32) -> bool {
+        let tokens = self.pause_tokens.read().await;
         if let Some(sender) = tokens.get(&id) {
             let _ = sender.send(()).await;
             true
@@ -168,8 +188,7 @@ impl DownloadManager {
         let mut tasks = self.tasks.write().await;
         tasks.remove(&id);
 
-        let mut tokens = self.cancel_tokens.write().await;
-        tokens.remove(&id);
+        self.remove_task_token(id).await;
     }
 }
 
@@ -248,7 +267,8 @@ pub async fn start_download(
 
         // 创建取消令牌
         let (cancel_tx, mut cancel_rx) = mpsc::channel::<()>(1);
-        DOWNLOAD_MANAGER.add_cancel_token(id, cancel_tx).await;
+        let (pause_tx, mut pause_rx) = mpsc::channel::<()>(1);
+        DOWNLOAD_MANAGER.add_task_token(id, cancel_tx, pause_tx).await;
 
         // 更新状态为下载中
         DOWNLOAD_MANAGER
@@ -284,22 +304,30 @@ pub async fn start_download(
                         Some(err_msg.clone()),
                     );
                     persist_error_async(&app_clone, id as i64, &err_msg).await;
-                    DOWNLOAD_MANAGER.remove_cancel_token(id).await;
+                    DOWNLOAD_MANAGER.remove_task_token(id).await;
                     return;
                 }
             }
         }
 
-        // 开始下载
+        // 开始下载 (with exponential-backoff retry)
         let http_client = HTTP_CLIENT.read().await;
-        let response = match http_client
-            .download_image(&task_clone.image_url, "https://gelbooru.com/")
-            .await
+        let response = match retry_fetch(
+            &http_client,
+            &task_clone.image_url,
+            "https://gelbooru.com/",
+            &mut cancel_rx,
+        )
+        .await
         {
             Ok(r) => r,
-            Err(e) => {
-                let err_msg = format!("Request failed: {}", e);
-                DOWNLOAD_MANAGER.set_task_error(id, err_msg.clone()).await;
+            Err(msg) if msg == "cancelled" => {
+                // Cancellation is expected — do not mark as failure.
+                DOWNLOAD_MANAGER.remove_task_token(id).await;
+                return;
+            }
+            Err(msg) => {
+                DOWNLOAD_MANAGER.set_task_error(id, msg.clone()).await;
                 emit_progress(
                     &app_clone,
                     id,
@@ -308,10 +336,10 @@ pub async fn start_download(
                     0.0,
                     0,
                     0,
-                    Some(err_msg.clone()),
+                    Some(msg.clone()),
                 );
-                persist_error_async(&app_clone, id as i64, &err_msg).await;
-                DOWNLOAD_MANAGER.remove_cancel_token(id).await;
+                persist_error_async(&app_clone, id as i64, &msg).await;
+                DOWNLOAD_MANAGER.remove_task_token(id).await;
                 return;
             }
         };
@@ -336,7 +364,7 @@ pub async fn start_download(
                     Some(err_msg.clone()),
                 );
                 persist_error_async(&app_clone, id as i64, &err_msg).await;
-                DOWNLOAD_MANAGER.remove_cancel_token(id).await;
+                DOWNLOAD_MANAGER.remove_task_token(id).await;
                 return;
             }
         };
@@ -348,8 +376,8 @@ pub async fn start_download(
         use futures::StreamExt;
 
         while let Some(chunk_result) = stream.next().await {
-            // 检查是否取消
-            if cancel_rx.try_recv().is_ok() {
+            // 检查是否暂停
+            if pause_rx.try_recv().is_ok() {
                 // 暂停状态 - 保留临时文件
                 DOWNLOAD_MANAGER
                     .update_task_status(id, DownloadStatus::Paused)
@@ -368,7 +396,7 @@ pub async fn start_download(
                     total_size,
                     None,
                 );
-                DOWNLOAD_MANAGER.remove_cancel_token(id).await;
+                DOWNLOAD_MANAGER.remove_task_token(id).await;
                 return;
             }
 
@@ -388,7 +416,7 @@ pub async fn start_download(
                             Some(err_msg.clone()),
                         );
                         persist_error_async(&app_clone, id as i64, &err_msg).await;
-                        DOWNLOAD_MANAGER.remove_cancel_token(id).await;
+                        DOWNLOAD_MANAGER.remove_task_token(id).await;
                         let _ = fs::remove_file(&temp_path);
                         return;
                     }
@@ -441,7 +469,7 @@ pub async fn start_download(
                         Some(err_msg.clone()),
                     );
                     persist_error_async(&app_clone, id as i64, &err_msg).await;
-                    DOWNLOAD_MANAGER.remove_cancel_token(id).await;
+                    DOWNLOAD_MANAGER.remove_task_token(id).await;
                     let _ = fs::remove_file(&temp_path);
                     return;
                 }
@@ -463,7 +491,7 @@ pub async fn start_download(
                 Some(err_msg.clone()),
             );
             persist_error_async(&app_clone, id as i64, &err_msg).await;
-            DOWNLOAD_MANAGER.remove_cancel_token(id).await;
+            DOWNLOAD_MANAGER.remove_task_token(id).await;
             return;
         }
 
@@ -493,7 +521,7 @@ pub async fn start_download(
             total_size,
         )
         .await;
-        DOWNLOAD_MANAGER.remove_cancel_token(id).await;
+        DOWNLOAD_MANAGER.remove_task_token(id).await;
     });
 
     Ok(())
@@ -510,7 +538,7 @@ pub async fn pause_download(id: u32) -> Result<(), String> {
         return Err("Task is not downloading".to_string());
     }
 
-    DOWNLOAD_MANAGER.cancel_task(id).await;
+    DOWNLOAD_MANAGER.pause_task(id).await;
     Ok(())
 }
 
@@ -631,7 +659,93 @@ async fn persist_error_async(app: &AppHandle, id: i64, error: &str) {
     let _ = database.update_download_task_error(id, error);
 }
 
-/// Describes the outcome of a single download attempt for test mocking.
+/// Outcome of one HTTP fetch attempt in the download pipeline.
+enum FetchOutcome {
+    /// Got a response (possibly an error status code — caller checks).
+    Response(reqwest::Response),
+    /// Unrecoverable transport error (network down, DNS fail, etc.).
+    TransportError(String),
+}
+
+/// Fetches a URL with exponential-backoff retry (up to 3 attempts, 1s / 2s / 4s).
+/// Races the fetch against a cancellation channel; cancels immediately when the
+/// channel is closed rather than waiting for the current backoff to finish.
+async fn retry_fetch(
+    http_client: &crate::services::http::HttpClient,
+    url: &str,
+    referer: &str,
+    cancel_rx: &mut mpsc::Receiver<()>,
+) -> Result<reqwest::Response, String> {
+    let mut attempt: u32 = 1;
+
+    loop {
+        // Race the network call against cancellation.
+        let outcome = tokio::select! {
+            result = http_client.download_image(url, referer) => {
+                match result {
+                    Ok(r) => FetchOutcome::Response(r),
+                    Err(e) => FetchOutcome::TransportError(e.to_string()),
+                }
+            }
+            _ = cancel_rx.recv() => return Err("cancelled".to_string()),
+        };
+
+        // If sender was dropped while awaiting the response, treat as cancelled.
+        if cancel_rx.is_closed() {
+            return Err("cancelled".to_string());
+        }
+
+        match outcome {
+            FetchOutcome::Response(response) => {
+                let status = response.status();
+                if status.is_server_error() {
+                    // 5xx — retryable.
+                    if attempt >= MAX_RETRIES {
+                        return Err(format!(
+                            "Server error {} after {} retries",
+                            status,
+                            MAX_RETRIES
+                        ));
+                    }
+                    let delay_ms = BASE_DELAY_MS * (2_u64.saturating_pow(attempt - 1));
+                    let delay = tokio::time::Duration::from_millis(delay_ms);
+                    tokio::select! {
+                        _ = tokio::time::sleep(delay) => {
+                            attempt += 1;
+                        }
+                        _ = cancel_rx.recv() => return Err("cancelled".to_string()),
+                    }
+                    if cancel_rx.is_closed() {
+                        return Err("cancelled".to_string());
+                    }
+                } else {
+                    // 2xx / 4xx — return immediately without retry.
+                    return Ok(response);
+                }
+            }
+            FetchOutcome::TransportError(msg) => {
+                if attempt >= MAX_RETRIES {
+                    return Err(format!(
+                        "Request failed after {} attempt(s): {}",
+                        attempt, msg
+                    ));
+                }
+                let delay_ms = BASE_DELAY_MS * (2_u64.saturating_pow(attempt - 1));
+                let delay = tokio::time::Duration::from_millis(delay_ms);
+                tokio::select! {
+                    _ = tokio::time::sleep(delay) => {
+                        attempt += 1;
+                    }
+                    _ = cancel_rx.recv() => return Err("cancelled".to_string()),
+                }
+                if cancel_rx.is_closed() {
+                    return Err("cancelled".to_string());
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 #[derive(Debug, Clone)]
 pub enum DownloadAttempt {
@@ -645,9 +759,7 @@ pub enum DownloadAttempt {
 #[cfg(test)]
 pub type RetryFetchResult = Result<DownloadAttempt, String>;
 
-#[cfg(test)]
 const MAX_RETRIES: u32 = 3;
-#[cfg(test)]
 const BASE_DELAY_MS: u64 = 1000;
 
 /// Wraps a download with exponential-backoff retry (up to MAX_RETRIES).

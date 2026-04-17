@@ -561,8 +561,11 @@ pub async fn cancel_download(id: u32) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn remove_download_task(id: u32) -> Result<(), String> {
+pub async fn remove_download_task(db: State<'_, DbState>, id: u32) -> Result<(), String> {
     DOWNLOAD_MANAGER.remove_task(id).await;
+    if let Ok(database) = db.0.lock() {
+        let _ = database.delete_download_task(id as i64);
+    }
     Ok(())
 }
 
@@ -600,11 +603,14 @@ pub async fn restore_download_tasks(db: State<'_, DbState>) -> Result<Vec<Downlo
 }
 
 #[tauri::command]
-pub async fn clear_completed_tasks() -> Result<(), String> {
+pub async fn clear_completed_tasks(db: State<'_, DbState>) -> Result<(), String> {
     let tasks = DOWNLOAD_MANAGER.get_all_tasks().await;
     for task in tasks {
         if task.status == DownloadStatus::Completed {
             DOWNLOAD_MANAGER.remove_task(task.id).await;
+            if let Ok(database) = db.0.lock() {
+                let _ = database.delete_download_task(task.id as i64);
+            }
         }
     }
     Ok(())

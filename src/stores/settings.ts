@@ -90,6 +90,16 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
+  // Immediate save without debounce — use when user clicks "保存设置" and
+  // needs the backend DB updated before navigating away.
+  async function forceSave(): Promise<void> {
+    if (saveTimeout !== null) {
+      clearTimeout(saveTimeout);
+      saveTimeout = null;
+    }
+    await saveSettings();
+  }
+
   function toggleTheme() {
     theme.value = theme.value === 'dark' ? 'light' : 'dark';
     saveSettingsDebounced();
@@ -145,5 +155,6 @@ export const useSettingsStore = defineStore('settings', () => {
     updateConcurrentDownloads,
     updateProxy,
     getProxyUrl,
+    forceSave,
   };
 });

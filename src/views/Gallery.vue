@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, nextTick, h } from 'vue';
+import { ref, onMounted, onUnmounted, computed, nextTick, h, watch } from 'vue';
 import {
   NEmpty,
   NButton,
@@ -28,6 +28,7 @@ import {
 import { invoke } from '@tauri-apps/api/core';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { imageBase64Cache } from '../utils/lruCache';
+import { useSettingsStore } from '@/stores/settings';
 
 const message = useMessage();
 const dialog = useDialog();
@@ -45,6 +46,15 @@ function getImageSrc(path: string): string {
 
 // IntersectionObserver ref — null until component mounts
 const observerRef = ref<IntersectionObserver | null>(null);
+
+// Re-load the directory tree whenever the download path changes in settings
+const settingsStore = useSettingsStore();
+watch(
+  () => settingsStore.downloadPath,
+  () => {
+    refresh();
+  }
+);
 
 // Observe callback: load base64 only for visible images
 function observeCallback(entries: IntersectionObserverEntry[]) {

@@ -7,39 +7,33 @@ import { LruCache } from '../utils/lruCache';
 // vi.hoisted — ensures variables are available during vi.mock hoisting.
 // These must be declared before any vi.mock calls.
 // ---------------------------------------------------------------------------
-const { observeSpy, unobserveSpy, disconnectSpy, takeRecordsSpy, fakeIntersectionObserver } =
-  vi.hoisted(() => {
-    const observe = vi.fn();
-    const unobserve = vi.fn();
-    const disconnect = vi.fn();
-    const takeRecords = vi.fn(() => []);
+const { observeSpy, fakeIntersectionObserver } = vi.hoisted(() => {
+  const observe = vi.fn();
+  const unobserve = vi.fn();
+  const disconnect = vi.fn();
+  const takeRecords = vi.fn(() => []);
 
-    let observerCallback: ((entries: IntersectionObserverEntry[]) => void) | null = null;
-
-    // fakeIntersectionObserver must be a vi.fn() spy so .mock.calls is accessible
-    const fakeIO = vi.fn(function (
-      this: unknown,
-      callback: (entries: IntersectionObserverEntry[]) => void
-    ) {
-      observerCallback = callback;
-      return {
-        observe,
-        unobserve,
-        disconnect,
-        takeRecords,
-      };
-    });
-
+  // fakeIntersectionObserver must be a vi.fn() spy so .mock.calls is accessible
+  const fakeIO = vi.fn(function (
+    this: unknown,
+    callback: (entries: IntersectionObserverEntry[]) => void,
+    options?: IntersectionObserverInit
+  ) {
+    void callback;
+    void options;
     return {
-      observeSpy: observe,
-      unobserveSpy: unobserve,
-      disconnectSpy: disconnect,
-      takeRecordsSpy: takeRecords,
-      fakeIntersectionObserver: fakeIO,
+      observe,
+      unobserve,
+      disconnect,
+      takeRecords,
     };
   });
 
-// observerCallback is declared inside vi.hoisted scope above; module-level reference not needed
+  return {
+    observeSpy: observe,
+    fakeIntersectionObserver: fakeIO,
+  };
+});
 
 // ---------------------------------------------------------------------------
 // @tauri-apps/api/core mock — setup.ts handles the mock; reference its exports
@@ -131,7 +125,10 @@ describe('Gallery.vue — IntersectionObserver lazy loading', () => {
     await flushPromises();
 
     expect(fakeIntersectionObserver).toHaveBeenCalledTimes(1);
-    const observerCall = fakeIntersectionObserver.mock.calls[0];
+    const observerCall = fakeIntersectionObserver.mock.calls[0] as [
+      callback: (entries: IntersectionObserverEntry[]) => void,
+      options?: IntersectionObserverInit,
+    ];
     const options = observerCall[1];
     expect(options).toMatchObject({
       root: null,
@@ -172,7 +169,7 @@ describe('Gallery.vue — IntersectionObserver lazy loading', () => {
     await nextTick();
 
     // Call loadVisibleImages via the exposed ref (defineExpose in Gallery.vue)
-    const vm = wrapper.vm as Record<string, unknown>;
+    const vm = wrapper.vm as unknown as Record<string, unknown>;
     const fn = vm.loadVisibleImages as (() => void) | undefined;
     expect(fn).toBeDefined();
     fn!();

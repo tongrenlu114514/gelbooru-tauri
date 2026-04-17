@@ -20,7 +20,12 @@ const { theme, downloadPath, concurrentDownloads, proxyEnabled, proxyHost, proxy
   storeToRefs(settingsStore);
 
 async function saveSettings() {
-  // Save settings to localStorage
+  // Immediately persist all settings (including download_path) to the backend DB
+  // without waiting for the debounced auto-save, so Gallery gets the new path on
+  // the next navigation.
+  await settingsStore.forceSave();
+
+  // Also update localStorage and proxy for immediate UI feedback
   localStorage.setItem(
     'settings',
     JSON.stringify({

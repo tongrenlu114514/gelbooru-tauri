@@ -79,6 +79,10 @@
 - 文档完整
 - 可发布版本
 
+**Plans:**
+- [ ] 04-01-PLAN.md -- Schema version table + migrations + error consistency verification
+- [ ] 04-02-PLAN.md -- Basic README.md + tauri.conf.json production verification
+
 ## State
 
 | Phase | Status | Notes |
@@ -86,7 +90,7 @@
 | Phase 1 | COMPLETED | 4/4 tasks done |
 | Phase 2 | COMPLETED | 5/5 plans done |
 | Phase 3 | COMPLETED | 4/4 plans executed |
-| Phase 4 | PENDING | 未开始 |
+| Phase 4 | PLANNED | 2/2 plans created |
 
 ## Recent Commits
 

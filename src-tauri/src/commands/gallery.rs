@@ -5,6 +5,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::State;
 
+// Error handling audit (Phase 4, REQ-4.2):
+// All commands return Result<T, String> — confirmed consistent across:
+//   gelbooru.rs, download.rs, gallery.rs, settings.rs, favorite_tags.rs
+// Chinese error messages in gallery.rs (e.g. "删除失败") are intentional for UI.
+// println!/eprintln! patterns preserved as-is per D-04.
+//
 /// Sanitize a path by removing dangerous components
 pub(crate) fn sanitize_path(path: &str) -> String {
     // Normalize path separators and remove null bytes

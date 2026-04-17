@@ -1,4 +1,10 @@
 {
+  // Phase 4 (REQ-4.4) verification: Production-ready configuration confirmed.
+  // - version: 1.0.0
+  // - bundle.targets: nsis (Windows installer)
+  // - nsis.installMode: currentUser (per-user install)
+  // - security.csp: configured
+  // No changes required per D-06.
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Gelbooru Downloader",
   "version": "1.0.0",

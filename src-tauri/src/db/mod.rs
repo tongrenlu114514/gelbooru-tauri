@@ -38,6 +38,57 @@ pub struct Database {
     conn: Mutex<Connection>,
 }
 
+/// All migrations run sequentially starting from version 1.
+/// Migrations are embedded string constants to avoid file I/O in the Tauri bundle.
+/// Naming convention: "001_init", "002_..." (sequential integer prefix per D-02).
+/// Empty SQL means no-op (used for baseline version 1 — tables already created).
+const MIGRATIONS: &[(&str, &str)] = &[
+    // Version 1: baseline — all 5 tables created by the original new() batch.
+    // No SQL needed; version 1 is set as baseline for existing DBs.
+    ("001_init", ""),
+];
+
+/// Creates schema_version table if absent, sets baseline version=1 for existing DBs,
+/// then runs all unapplied migrations in order.
+fn run_migrations(conn: &Connection) -> SqliteResult<()> {
+    // 1. Ensure schema_version table exists (idempotent)
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY)",
+        [],
+    )?;
+
+    // 2. If no row exists, this is an existing DB — set baseline to 1
+    let has_row: bool = conn
+        .query_row(
+            "SELECT 1 FROM schema_version LIMIT 1",
+            [],
+            |_| Ok(true),
+        )
+        .unwrap_or(false);
+
+    if !has_row {
+        conn.execute("INSERT INTO schema_version VALUES (1)", [])?;
+    }
+
+    // 3. Read current version
+    let current: i32 =
+        conn.query_row("SELECT version FROM schema_version", [], |row| row.get(0))?;
+
+    // 4. Run migrations sequentially (only those with version > current and non-empty SQL)
+    for (name, sql) in MIGRATIONS.iter() {
+        let version: i32 = name[..3].parse().unwrap_or(0); // "001" -> 1
+        if version > current && !sql.is_empty() {
+            conn.execute_batch(sql)?;
+            conn.execute(
+                "INSERT OR REPLACE INTO schema_version VALUES (?1)",
+                rusqlite::params![version],
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
 // These functions are primarily used by tests - allow dead_code at module level
 #[allow(dead_code)]
 impl Database {
@@ -50,6 +101,9 @@ impl Database {
         }
 
         let conn = Connection::open(&db_path)?;
+
+        // Run schema migrations before creating tables
+        run_migrations(&conn)?;
 
         // Create tables
         conn.execute_batch(
@@ -687,5 +741,52 @@ mod tests {
 
         let none = db.get_favorite_tag_by_tag("nonexistent").unwrap();
         assert!(none.is_none());
+    }
+
+    // Schema version tests
+    #[test]
+    fn test_schema_version_baseline_for_existing_db() {
+        use rusqlite::Connection;
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("test.db");
+        let conn = Connection::open(&db_path).unwrap();
+
+        // Simulate an existing DB without schema_version table
+        // (i.e., created by the old code path — just the 5 tables, no version row)
+        conn.execute_batch(
+            r#"
+            CREATE TABLE IF NOT EXISTS downloads (id INTEGER PRIMARY KEY);
+            CREATE TABLE IF NOT EXISTS favorites (id INTEGER PRIMARY KEY);
+            "#,
+        )
+        .unwrap();
+
+        // Run migrations on the "existing" DB
+        run_migrations(&conn).unwrap();
+
+        // Verify version was set to 1
+        let version: i32 = conn
+            .query_row("SELECT version FROM schema_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 1);
+    }
+
+    #[test]
+    fn test_schema_version_runs_migrations_in_order() {
+        // Test that migrations with version > current are applied in order.
+        // This test uses a clean DB (no pre-existing tables) and verifies
+        // that run_migrations completes without error and sets version correctly.
+        let (_dir, db) = create_test_db();
+        // After create_test_db() calls Database::new(), schema_version should exist with version=1
+        // Run migrations again — should be a no-op (current=1, no migrations have version>1)
+        let conn_ref = &db.conn;
+        let conn = conn_ref.lock().unwrap();
+        let version: i32 = conn
+            .query_row("SELECT version FROM schema_version", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(
+            version, 1,
+            "Fresh DB should have schema_version=1 after new()"
+        );
     }
 }

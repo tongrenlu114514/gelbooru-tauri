@@ -7,30 +7,37 @@ import { LruCache } from '../utils/lruCache';
 // vi.hoisted — ensures variables are available during vi.mock hoisting.
 // These must be declared before any vi.mock calls.
 // ---------------------------------------------------------------------------
-const { observeSpy, unobserveSpy, disconnectSpy, takeRecordsSpy, fakeIntersectionObserver } = vi.hoisted(() => {
-  const observe = vi.fn();
-  const unobserve = vi.fn();
-  const disconnect = vi.fn();
-  const takeRecords = vi.fn(() => []);
+const { observeSpy, unobserveSpy, disconnectSpy, takeRecordsSpy, fakeIntersectionObserver } =
+  vi.hoisted(() => {
+    const observe = vi.fn();
+    const unobserve = vi.fn();
+    const disconnect = vi.fn();
+    const takeRecords = vi.fn(() => []);
 
-  let observerCallback: ((entries: IntersectionObserverEntry[]) => void) | null = null;
+    let observerCallback: ((entries: IntersectionObserverEntry[]) => void) | null = null;
 
-  // fakeIntersectionObserver must be a vi.fn() spy so .mock.calls is accessible
-  const fakeIO = vi.fn(function (
-    this: unknown,
-    callback: (entries: IntersectionObserverEntry[]) => void
-  ) {
-    observerCallback = callback;
+    // fakeIntersectionObserver must be a vi.fn() spy so .mock.calls is accessible
+    const fakeIO = vi.fn(function (
+      this: unknown,
+      callback: (entries: IntersectionObserverEntry[]) => void
+    ) {
+      observerCallback = callback;
+      return {
+        observe,
+        unobserve,
+        disconnect,
+        takeRecords,
+      };
+    });
+
     return {
-      observe,
-      unobserve,
-      disconnect,
-      takeRecords,
+      observeSpy: observe,
+      unobserveSpy: unobserve,
+      disconnectSpy: disconnect,
+      takeRecordsSpy: takeRecords,
+      fakeIntersectionObserver: fakeIO,
     };
   });
-
-  return { observeSpy: observe, unobserveSpy: unobserve, disconnectSpy: disconnect, takeRecordsSpy: takeRecords, fakeIntersectionObserver: fakeIO };
-});
 
 // observerCallback is declared inside vi.hoisted scope above; module-level reference not needed
 
@@ -55,8 +62,10 @@ vi.mock('naive-ui', async (importOriginal) => {
     ...actual,
     useMessage: () => ({ info: vi.fn(), success: vi.fn(), error: vi.fn(), warning: vi.fn() }),
     useDialog: () => ({ warning: vi.fn(), info: vi.fn(), error: vi.fn(), success: vi.fn() }),
-    NMessageProvider: ({ children }: { children?: unknown }) => children as ReturnType<typeof importOriginal>,
-    NDialogProvider: ({ children }: { children?: unknown }) => children as ReturnType<typeof importOriginal>,
+    NMessageProvider: ({ children }: { children?: unknown }) =>
+      children as ReturnType<typeof importOriginal>,
+    NDialogProvider: ({ children }: { children?: unknown }) =>
+      children as ReturnType<typeof importOriginal>,
   };
 });
 

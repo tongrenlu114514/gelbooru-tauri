@@ -3,27 +3,27 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: Ready to plan
-last_updated: "2026-04-15T16:09:10.154Z"
+last_updated: "2026-04-17T00:00:00.000Z"
 progress:
   total_phases: 4
-  completed_phases: 1
-  total_plans: 5
-  completed_plans: 7
+  completed_phases: 3
+  total_plans: 13
+  completed_plans: 13
   percent: 100
 ---
 
 # Project State
 
 **Project:** Gelbooru Downloader
-**Last Updated:** 2026-04-15
+**Last Updated:** 2026-04-17
 
 ## Current Phase
 
-**Phase:** 3
+**Phase:** 4
 
-**Phase Status:** COMPLETED - All plans executed successfully
+**Phase Status:** PENDING - Phase 3 just completed
 
-**Next Action:** Phase 2 is ready for verification before proceeding to Phase 3
+**Next Action:** Phase 4 (Polish & Release) ready for `/gsd-plan-phase 4`
 
 ## Phase Progress
 
@@ -31,53 +31,45 @@ progress:
 |-------|--------|------------|-------|
 | Phase 1: Foundation & Polish | COMPLETED | 100% | 4/4 tasks done |
 | Phase 2: Quality & Testing | COMPLETED | 100% | All 5 plans complete with pre-commit hook configured |
-| Phase 3: Performance & Reliability | READY | 0% | Ready for `/gsd-plan-phase 3` |
+| Phase 3: Performance & Reliability | COMPLETED | 100% | All 4 plans complete (lazy loading, retry, scan, rate limit) |
 | Phase 4: Polish & Release | PENDING | 0% | - |
 
 ## Current Focus
 
-Phase 2 completed successfully:
+Phase 3 completed — all 4 plans executed and verified:
 
-- All 5 plans executed across 1 wave (02-01, 02-02, 02-03, 02-04, 02-05)
+- All 4 plans executed across 1 wave (03-01, 03-02, 03-03, 03-04)
 - **Achievements:**
-  - ✅ Frontend testing framework (Vitest) with async tests
-  - ✅ Comprehensive gallery store async/error tests
-  - ✅ Backend Rust tests (80+ unit tests) covering:
-    - Models (post, tag, page)
-    - Database CRUD operations
-    - HTTP service utils
-    - Scraper HTML parsing
-    - Gallery commands (validation, path traversal protection)
-  - ✅ ESLint/Prettier pre-commit hooks configured
-  - ✅ All clippy warnings fixed
-- **Key fixes applied:**
-  - Resolved pre-existing Rust clippy warnings (dead_code, too_many_arguments, etc.)
-  - Added base directory validation for path traversal protection
-  - Settings persistence and download restoration on restart
-- **Quality achievements:**
-  - 80+ unit tests passing
-  - Pre-commit hook now passes clean (`cargo clippy -- -D warnings`)
-  - Code coverage infrastructure in place
+  - ✅ imageCache memory leak FIXED: IntersectionObserver lazy loading, only viewport-visible images enter LRU cache (100 max), observer disconnects on unmount
+  - ✅ Download retry ADDED: 3-attempt exponential backoff (1s/2s/4s), 5xx retry, 4xx no-retry, separate cancel/pause channels
+  - ✅ Large directory scan OPTIMIZED: Parallel scan with spawn_blocking+thread::scope, Semaphore(10), deep trees complete without deadlock
+  - ✅ HTTP rate limiting ADDED: Global 500ms gap in HttpClient via RwLock<Instant>, covers all HTTP operations
+- **Threat mitigations:**
+  - T-03-01: DoS via unbounded base64 preloading → MITIGATED (IntersectionObserver + LRU cache)
+  - T-03-01: DoS via infinite retry loop → MITIGATED (3-retry cap + exponential backoff)
+  - T-03-02: FD exhaustion → MITIGATED (Semaphore(10))
+  - T-03-02: Unbounded HTTP requests → MITIGATED (500ms global rate limit)
+- **Test results:** 220/220 tests passing (118 frontend + 102 Rust), clippy clean
+- **Deviations:** 9 auto-fixed (5 Rule-1 bugs, 3 Rule-3 blocking, 1 Rule-4 architecture)
 
-## Phase 2 Scope (from ROADMAP.md)
+## Phase 3 Scope (from ROADMAP.md)
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 2.1 | 配置测试框架 (Vitest + Rust tests) | COMPLETED | Vitest/ESLint/Prettier configured with async tests |
-| 2.2 | 单元测试 (前端) | COMPLETED | Gallery store async/error tests added |
-| 2.3 | 单元测试 (后端) | COMPLETED | 80+ Rust tests added for all components |
-| 2.4 | 配置 ESLint/Prettier | COMPLETED | Pre-commit hooks configured and working |
-| 2.5 | 配置 pre-commit hook | COMPLETED | Husky + lint-staged active on all files |
+| 3.1 | imageCache 内存泄漏修复 | COMPLETED | IntersectionObserver lazy loading in Gallery.vue |
+| 3.2 | 下载重试机制 | COMPLETED | Exponential backoff (1s/2s/4s), 3-attempt retry in download.rs |
+| 3.3 | 大目录扫描优化 | COMPLETED | Parallel scan with Semaphore(10), spawn_blocking+thread::scope |
+| 3.4 | 添加请求限流 | COMPLETED | Global 500ms rate limit in HttpClient via RwLock<Instant> |
 
 ## Active Issues
 
 From Phase 1 completion and Phase 2 planning:
 
-### HIGH Priority - Deferred to Phase 3
+### HIGH Priority - Deferred to Phase 4
 
-1. imageCache 内存泄漏 - Gallery.vue
-2. 下载无重试机制
-3. 大目录同步扫描
+1. Schema 版本管理 - db/mod.rs
+2. 错误处理统一化
+3. 文档完善
 
 ### COMPLETED - Phase 2
 
@@ -135,6 +127,6 @@ Tables (via rusqlite):
 
 ## Notes
 
-- Phase 1 成功完成，所有 HIGH 优先级问题已修复
-- 测试基础设施已就绪 (Vitest, rstest)
-- Phase 2 重点：扩展前端测试 + 创建后端测试
+- Phase 3 成功完成，所有性能和可靠性问题已修复
+- 威胁 T-03-01、T-03-02 全部缓解
+- Phase 4 重点：Schema 版本管理 + 错误处理统一化 + 发布准备

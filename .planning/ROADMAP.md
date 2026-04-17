@@ -1,6 +1,6 @@
 # Gelbooru Downloader - Roadmap
 
-**Last Updated:** 2026-04-16
+**Last Updated:** 2026-04-17
 
 ## Project Phases
 
@@ -53,10 +53,10 @@
 | 3.4 | 添加请求限流 | LOW | http.rs |
 
 **Plans:**
-- [ ] 03-01-PLAN.md - imageCache lazy loading via IntersectionObserver
-- [ ] 03-02-PLAN.md - Download retry with exponential backoff (3 retries, 1s/2s/4s)
-- [ ] 03-03-PLAN.md - Async directory scan with tokio::fs + Semaphore (max 10 handles)
-- [ ] 03-04-PLAN.md - Global HTTP rate limiting (500ms gap via RwLock<Instant>)
+- [x] 03-01-PLAN.md - imageCache lazy loading via IntersectionObserver
+- [x] 03-02-PLAN.md - Download retry with exponential backoff (3 retries, 1s/2s/4s)
+- [x] 03-03-PLAN.md - Async directory scan with tokio::fs + Semaphore (max 10 handles)
+- [x] 03-04-PLAN.md - Global HTTP rate limiting (500ms gap via RwLock<Instant>)
 
 **Success Criteria:**
 - 无内存泄漏
@@ -85,7 +85,7 @@
 |-------|--------|-------|
 | Phase 1 | COMPLETED | 4/4 tasks done |
 | Phase 2 | COMPLETED | 5/5 plans done |
-| Phase 3 | READY | 0/4 plans executed |
+| Phase 3 | COMPLETED | 4/4 plans executed |
 | Phase 4 | PENDING | 未开始 |
 
 ## Recent Commits

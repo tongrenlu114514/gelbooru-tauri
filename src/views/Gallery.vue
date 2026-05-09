@@ -10,6 +10,7 @@ import {
   NLayoutContent,
   useMessage,
   useDialog,
+  NSpin,
 } from 'naive-ui';
 import {
   RefreshOutline,
@@ -17,18 +18,16 @@ import {
   TrashOutline,
   ChevronBackOutline,
   ChevronForwardOutline,
+  ChevronUpOutline,
 } from '@vicons/ionicons5';
 import { invoke } from '@tauri-apps/api/core';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { imageBase64Cache } from '@/utils/lruCache';
-import { useSettingsStore } from '@/stores/settings';
-import GallerySidebar from './GallerySidebar.vue';
 import GalleryCards from './GalleryCards.vue';
 import type { ImageInfo, SubDirInfo } from './GalleryCards.vue';
 
 const message = useMessage();
 const dialog = useDialog();
-const settingsStore = useSettingsStore();
 
 // D-05: convertFileSrc primary (base64 fallback only on error)
 function getImageSrc(path: string): string {
@@ -38,11 +37,6 @@ function getImageSrc(path: string): string {
 
 // IntersectionObserver — Phase 3 memory leak fix, preserved intact
 const observerRef = ref<IntersectionObserver | null>(null);
-
-watch(
-  () => settingsStore.downloadPath,
-  () => refresh()
-);
 
 function observeCallback(entries: IntersectionObserverEntry[]) {
   entries.forEach((entry) => {
@@ -70,17 +64,6 @@ function loadVisibleImages() {
   cards.forEach((card) => observerRef.value!.observe(card));
 }
 
-interface TreeNode {
-  key: string;
-  label: string;
-  path: string;
-  isLeaf: boolean;
-  imageCount: number;
-  children?: TreeNode[];
-  thumbnail?: string;
-}
-
-const treeData = ref<TreeNode[]>([]);
 const selectedKey = ref<string | null>(null);
 const subdirs = ref<SubDirInfo[]>([]);
 const images = ref<ImageInfo[]>([]);
@@ -92,6 +75,14 @@ const previewIndex = ref(0);
 
 const currentImage = computed(() => images.value[previewIndex.value]);
 const currentPath = computed(() => selectedKey.value || '');
+
+// Parent path: strip last path segment
+const parentPath = computed(() => {
+  if (!selectedKey.value) return null;
+  const parts = selectedKey.value.replace(/\\/g, '/').split('/');
+  parts.pop();
+  return parts.join('/') || null;
+});
 
 async function openCurrentFolder() {
   if (!currentPath.value) return;
@@ -120,39 +111,6 @@ function handleKeydown(e: KeyboardEvent) {
   if (e.key === 'ArrowLeft') prevImage();
   if (e.key === 'ArrowRight') nextImage();
   if (e.key === 'Escape') showPreview.value = false;
-}
-
-function findNodeByKey(nodes: TreeNode[], key: string): TreeNode | null {
-  for (const node of nodes) {
-    if (node.key === key) return node;
-    if (node.children) {
-      const found = findNodeByKey(node.children, key);
-      if (found) return found;
-    }
-  }
-  return null;
-}
-
-function handleTreeSelect(key: string) {
-  selectedKey.value = key;
-  const node = findNodeByKey(treeData.value, key);
-  if (node) {
-    loadImagesForDirectory(node.path);
-  } else {
-    images.value = [];
-    subdirs.value = [];
-  }
-}
-
-async function loadTree() {
-  loadingTree.value = true;
-  try {
-    treeData.value = await invoke<TreeNode[]>('get_directory_tree', {});
-  } catch (error) {
-    console.error('Failed to load directory tree:', error);
-  } finally {
-    loadingTree.value = false;
-  }
 }
 
 async function loadImagesForDirectory(dirPath: string) {
@@ -207,12 +165,18 @@ async function deleteImage(index: number) {
         }
         if (images.value.length === 0) showPreview.value = false;
         message.success('删除成功');
-        await loadTree();
+        await refresh();
       } catch (error) {
         message.error(`删除失败: ${error}`);
       }
     },
   });
+}
+
+function goUp() {
+  if (!parentPath.value) return;
+  selectedKey.value = parentPath.value;
+  loadImagesForDirectory(parentPath.value);
 }
 
 async function refresh() {
@@ -221,6 +185,20 @@ async function refresh() {
   subdirs.value = [];
   images.value = [];
   await loadTree();
+}
+
+async function loadTree() {
+  loadingTree.value = true;
+  try {
+    // Load initial directory on mount — treeData no longer needed for UI
+    await loadImagesForDirectory('');
+    // Try to set initial selectedKey from root
+    selectedKey.value = '';
+  } catch (error) {
+    console.error('Failed to load directory:', error);
+  } finally {
+    loadingTree.value = false;
+  }
 }
 
 onMounted(() => {
@@ -237,6 +215,11 @@ onUnmounted(() => {
   observerRef.value?.disconnect();
 });
 
+watch(
+  () => null, // placeholder - settingsStore removed, no watch needed
+  () => refresh()
+);
+
 defineExpose({ loadVisibleImages });
 </script>
 
@@ -252,20 +235,59 @@ defineExpose({ loadVisibleImages });
       </n-button>
     </n-space>
 
-    <n-layout has-sider style="height: calc(100vh - 140px)">
-      <GallerySidebar
-        :tree-data="treeData"
-        :selected-key="selectedKey"
-        :loading-tree="loadingTree"
-        @select="handleTreeSelect"
-      />
-
+    <n-layout style="height: calc(100vh - 140px)">
       <n-layout-content content-style="padding: 12px">
+        <!-- Path bar -->
         <div v-if="selectedKey" class="path-bar" @click="openCurrentFolder">
           <n-icon :size="16"><FolderOpenOutline /></n-icon>
           <span class="path-text">{{ currentPath }}</span>
         </div>
 
+        <!-- Folder list: flat horizontal navigation above image grid -->
+        <div v-if="selectedKey !== null" class="folder-list">
+          <n-spin :show="loadingImages" size="small">
+            <div class="folder-list-inner">
+              <!-- ".." up navigation -->
+              <div
+                v-if="parentPath"
+                class="folder-item folder-up"
+                @click="goUp"
+              >
+                <n-icon :size="14" color="#999">
+                  <ChevronUpOutline />
+                </n-icon>
+                <span class="folder-name">..</span>
+              </div>
+
+              <!-- Divider before subdirs -->
+              <span v-if="parentPath && subdirs.length > 0" class="folder-divider">|</span>
+
+              <!-- Subdir entries -->
+              <template v-for="(subdir, i) in subdirs" :key="subdir.path">
+                <div
+                  class="folder-item"
+                  :class="{ active: selectedKey === subdir.path }"
+                  @click="enterSubdir(subdir)"
+                >
+                  <n-icon :size="14" color="#f0a020">
+                    <FolderOpenOutline />
+                  </n-icon>
+                  <span class="folder-name">{{ subdir.name }}</span>
+                  <span class="folder-count">{{ subdir.imageCount }}</span>
+                </div>
+                <span v-if="i < subdirs.length - 1" class="folder-divider">|</span>
+              </template>
+            </div>
+          </n-spin>
+        </div>
+
+        <!-- Empty state before any folder is selected -->
+        <div v-if="selectedKey === null && !loadingTree" class="no-folder-hint">
+          <n-icon :size="40" depth="4"><FolderOpenOutline /></n-icon>
+          <p>从上方列表选择一个文件夹开始浏览</p>
+        </div>
+
+        <!-- Image card grid -->
         <GalleryCards
           :images="images"
           :subdirs="subdirs"
@@ -339,7 +361,7 @@ defineExpose({ loadVisibleImages });
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
   background: #f5f5f5;
   border-radius: 6px;
   cursor: pointer;
@@ -354,6 +376,74 @@ defineExpose({ loadVisibleImages });
   font-size: 13px;
   color: #666;
   word-break: break-all;
+}
+
+.folder-list {
+  margin-bottom: 8px;
+  min-height: 32px;
+}
+
+.folder-list-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+}
+
+.folder-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.folder-item:hover {
+  background: #f0f0f0;
+}
+
+.folder-item.active {
+  background: #e8f0fe;
+}
+
+.folder-up {
+  color: #666;
+}
+
+.folder-name {
+  font-size: 13px;
+  color: #333;
+}
+
+.folder-count {
+  font-size: 11px;
+  color: #999;
+  background: #f5f5f5;
+  padding: 1px 5px;
+  border-radius: 8px;
+}
+
+.folder-divider {
+  color: #ddd;
+  font-size: 12px;
+  user-select: none;
+}
+
+.no-folder-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  height: 200px;
+  color: #999;
+  font-size: 14px;
+}
+
+.no-folder-hint p {
+  margin: 0;
 }
 
 .preview-container {

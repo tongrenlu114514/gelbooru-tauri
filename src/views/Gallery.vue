@@ -25,9 +25,11 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import { imageBase64Cache } from '@/utils/lruCache';
 import GalleryCards from './GalleryCards.vue';
 import type { ImageInfo, SubDirInfo } from './GalleryCards.vue';
+import { useSettingsStore } from '@/stores/settings';
 
 const message = useMessage();
 const dialog = useDialog();
+const settingsStore = useSettingsStore();
 
 // D-05: convertFileSrc primary (base64 fallback only on error)
 function getImageSrc(path: string): string {
@@ -190,10 +192,14 @@ async function refresh() {
 async function loadTree() {
   loadingTree.value = true;
   try {
-    // Load initial directory on mount — treeData no longer needed for UI
-    await loadImagesForDirectory('');
-    // Try to set initial selectedKey from root
-    selectedKey.value = '';
+    // Load download directory on mount
+    const rootDir = settingsStore.downloadPath;
+    if (rootDir) {
+      await loadImagesForDirectory(rootDir);
+      selectedKey.value = rootDir;
+    } else {
+      selectedKey.value = null;
+    }
   } catch (error) {
     console.error('Failed to load directory:', error);
   } finally {
@@ -216,7 +222,7 @@ onUnmounted(() => {
 });
 
 watch(
-  () => null, // placeholder - settingsStore removed, no watch needed
+  () => settingsStore.downloadPath,
   () => refresh()
 );
 

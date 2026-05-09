@@ -1,4 +1,11 @@
 import { vi } from 'vitest';
+import { createPinia, setActivePinia } from 'pinia';
+
+// ---------------------------------------------------------------------------
+// Pinia setup — required because Gallery.vue calls useSettingsStore() at setup time.
+// Must be initialized before any component that uses a Pinia store mounts.
+// ---------------------------------------------------------------------------
+setActivePinia(createPinia());
 
 // ---------------------------------------------------------------------------
 // Module-level spies — must be declared BEFORE vi.mock calls (hoisting order)

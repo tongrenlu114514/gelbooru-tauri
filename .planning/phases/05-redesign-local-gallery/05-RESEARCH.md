@@ -624,27 +624,25 @@ The `transition: z-index 0s` makes z-index change instant while other properties
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Selection mode behavior:**
-   - What we know: D-07 mentions "左上角蓝色勾选框" for selection state
-   - What's unclear: Is multi-select supported? How does it work with the current single-click preview behavior?
-   - Recommendation: Implement single-select for now (click = preview); multi-select can be deferred
+   - D-07 "左上角蓝色勾选框" refers to a `.selected` CSS class for a persistent selection indicator — NOT multi-select mode.
+   - Resolution: Single-select only (click = preview). No multi-select in Phase 5 scope. The `.selected` class on the card shows a blue outline+checkmark when `isSelected` is true (future feature).
+   - Implementation: No selection state in Phase 5. `selectedKey` refers to tree node selection, not image selection.
 
 2. **Skeleton count estimate:**
-   - What we know: D-09 says "skeleton数量与预期图片数量匹配"
-   - What's unclear: Should skeleton count reflect subdirs + estimated visible images?
-   - Recommendation: Use a fixed 12-skeleton grid as a reasonable starting point; compute from viewport width if time permits
+   - D-09: "skeleton数量与预期图片数量匹配" — use fixed 12 + ResizeObserver adaptive.
+   - Resolution: Fixed 12 as initial estimate, updated via ResizeObserver when the grid mounts. Formula: `Math.max(cols * 3, 6)` where `cols = Math.floor(gridWidth / 164)`.
+   - Already implemented in PLAN.md GalleryCards.vue skeletonCount ref + ResizeObserver.
 
 3. **Sidebar width persistence:**
-   - What we know: `sidebarCollapsed` is already in `useSettingsStore` and persisted
-   - What's unclear: Should Gallery.vue read from the store or use local state?
-   - Recommendation: Read from store (`settingsStore.sidebarCollapsed`) so collapse state persists across sessions, but allow local toggle via the sidebar button
+   - `sidebarCollapsed` already exists in `useSettingsStore` and is persisted.
+   - Resolution: Read from `settingsStore.sidebarCollapsed` so collapse state persists across sessions. GallerySidebar.vue syncs via `computed({ get: () => settingsStore.sidebarCollapsed, set: (v) => settingsStore.toggleSidebar() })`.
 
 4. **Folder card thumbnail source:**
-   - What we know: D-11 says "子目录第一张图片" as thumbnail
-   - What's unclear: Is this returned by `get_directory_images` or computed from the subdir's images?
-   - Recommendation: Use existing `subdir.thumbnail` field if available in `SubDirInfo` interface; verify with `src-tauri/src/commands/gallery.rs`
+   - Confirmed in `gallery.rs` line 647: `get_directory_images_async` sets `thumbnail: first` (first image path) for each `SubDirInfo`.
+   - Resolution: `subdir.thumbnail` is available from `get_directory_images`. Use `subdir.thumbnail` directly in folder cards. Falls back to FolderOutline icon when `!subdir.thumbnail`.
 
 ---
 

@@ -65,6 +65,36 @@ function loadVisibleImages() {
   cards.forEach((card) => observerRef.value!.observe(card));
 }
 
+/** Wait for MasonryWall to finish populating [data-image-path] cards in the DOM */
+function waitForCards(timeoutMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    if (document.querySelector('[data-image-path]')) {
+      resolve();
+      return;
+    }
+    const observer = new MutationObserver(() => {
+      if (document.querySelector('[data-image-path]')) {
+        observer.disconnect();
+        resolve();
+      }
+    });
+    const start = Date.now();
+    const poll = setInterval(() => {
+      if (document.querySelector('[data-image-path]')) {
+        clearInterval(poll);
+        observer.disconnect();
+        resolve();
+        return;
+      }
+      if (Date.now() - start > timeoutMs) {
+        clearInterval(poll);
+        observer.disconnect();
+        resolve(); // don't block, just proceed
+      }
+    }, 50);
+  });
+}
+
 const selectedKey = ref<string | null>(null);
 const images = ref<ImageInfo[]>([]);
 const loadingTree = ref(false);
@@ -154,8 +184,9 @@ async function loadImagesForDirectory(dirPath: string, reset = true) {
     }
     hasMore.value = result.has_more;
     if (reset) {
-      await nextTick();
-      await nextTick(); // wait for MasonryWall async fillColumns pipeline
+      // Wait for MasonryWall async redraw() to finish — fillColumns is deeply
+      // recursive (N items × N nextTicks). Use MutationObserver to detect
+      // when [data-image-path] cards are actually in the DOM, then observe them.
       if (!observerRef.value) {
         observerRef.value = new IntersectionObserver(observeCallback, {
           root: null,
@@ -163,6 +194,7 @@ async function loadImagesForDirectory(dirPath: string, reset = true) {
           threshold: 0.01,
         });
       }
+      await waitForCards(5000);
       loadVisibleImages();
       setupLoadMoreObserver();
     }

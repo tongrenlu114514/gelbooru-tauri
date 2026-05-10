@@ -371,9 +371,11 @@ describe('Gallery.vue — IntersectionObserver lazy loading', () => {
     const wrapper = mount(Gallery, BASE_OPTS);
     await flushPromises();
 
-    const observer = fakeIntersectionObserver.mock.results[0]?.value as {
-      disconnect: ReturnType<typeof vi.fn>;
-    } | undefined;
+    const observer = fakeIntersectionObserver.mock.results[0]?.value as
+      | {
+          disconnect: ReturnType<typeof vi.fn>;
+        }
+      | undefined;
 
     if (!observer) {
       wrapper.unmount();

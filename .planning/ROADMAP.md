@@ -121,8 +121,8 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 06-01-PLAN.md — Masonry: @yeger/vue-masonry-wall + GalleryCards.vue refactor (2 tasks)
-- [ ] 06-02-PLAN.md — Breadcrumb: NBreadcrumb + path resolution + scroll orchestration (3 tasks)
+- [x] 06-01-PLAN.md — Masonry: @yeger/vue-masonry-wall + GalleryCards.vue refactor (2 tasks)
+- [x] 06-02-PLAN.md — Breadcrumb: NBreadcrumb + path resolution + scroll orchestration (3 tasks)
 
 **Locked Decisions (D-01 to D-04):**
 - D-01: Masonry = @yeger/vue-masonry-wall (column-width=160, gap=4, row-priority)

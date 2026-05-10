@@ -120,7 +120,11 @@ const BASE_OPTS = {
       'n-modal': true,
       'n-text': true,
       'n-skeleton': true,
-      'gallery-cards': true,
+      'gallery-cards': {
+        template: '<div />',
+        props: ['images', 'loadingImages', 'selectedKey'],
+        expose: { setCardSrc: () => {}, getCardSrc: () => '', imageCount: 0 },
+      },
     },
   },
 };

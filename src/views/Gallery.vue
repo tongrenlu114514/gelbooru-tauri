@@ -51,7 +51,9 @@ function observeCallback(entries: IntersectionObserverEntry[]) {
     if (!path) return;
     // Use convertFileSrc (Tauri asset protocol) — faster than base64 decoding
     const src = convertFileSrc(path.replace(/\\/g, '/'));
-    galleryCardsRef.value?.setCardSrc(path, src);
+    if (galleryCardsRef.value && typeof galleryCardsRef.value.setCardSrc === 'function') {
+      galleryCardsRef.value.setCardSrc(path, src);
+    }
     observerRef.value?.unobserve(card); // loaded — stop watching
   });
 }
@@ -342,6 +344,7 @@ defineExpose({ loadVisibleImages });
 
         <!-- Image card grid + infinite scroll sentinel -->
         <GalleryCards
+          ref="galleryCardsRef"
           :images="images"
           :loading-images="loadingImages"
           :selected-key="selectedKey"

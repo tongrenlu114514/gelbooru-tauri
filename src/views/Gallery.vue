@@ -155,6 +155,7 @@ async function loadImagesForDirectory(dirPath: string, reset = true) {
     hasMore.value = result.has_more;
     if (reset) {
       await nextTick();
+      await nextTick(); // wait for MasonryWall async fillColumns pipeline
       if (!observerRef.value) {
         observerRef.value = new IntersectionObserver(observeCallback, {
           root: null,
@@ -278,13 +279,6 @@ async function loadTree() {
 onMounted(() => {
   loadTree();
   window.addEventListener('keydown', handleKeydown);
-  observerRef.value = new IntersectionObserver(observeCallback, {
-    root: null,
-    rootMargin: '200px',
-    threshold: 0.01,
-  });
-  // Setup infinite scroll observer once sentinel is rendered
-  nextTick(() => setupLoadMoreObserver());
 });
 
 onUnmounted(() => {

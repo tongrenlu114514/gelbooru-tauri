@@ -78,6 +78,11 @@ function loadVisibleImages() {
   const grid = document.querySelector('.content-grid');
   console.log('[Gallery] loadVisibleImages', {
     grid_exists: !!grid,
+    grid_tag: grid?.tagName,
+    grid_class: grid?.className,
+    grid_innerHTML: grid?.innerHTML?.slice(0, 200),
+    galleryCardsRef: galleryCardsRef.value,
+    galleryCardsRef_type: galleryCardsRef.value ? galleryCardsRef.value.constructor.name : 'null',
     observer_exists: !!observerRef.value,
   });
   if (!grid || !observerRef.value) return;

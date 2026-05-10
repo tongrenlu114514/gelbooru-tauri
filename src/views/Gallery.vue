@@ -49,10 +49,21 @@ function observeCallback(entries: IntersectionObserverEntry[]) {
     const card = entry.target as HTMLElement;
     const path = card.dataset.imagePath;
     if (!path) return;
-    // Use convertFileSrc (Tauri asset protocol) — faster than base64 decoding
     const src = convertFileSrc(path.replace(/\\/g, '/'));
+    // Try galleryCardsRef first (works in real browser)
     if (galleryCardsRef.value && typeof galleryCardsRef.value.setCardSrc === 'function') {
       galleryCardsRef.value.setCardSrc(path, src);
+    } else {
+      // Fallback: use data attribute to locate GalleryCards root element,
+      // then call setCardSrc via __vueParentComponent.exposed
+      const card = entry.target as HTMLElement;
+      const gc = card.closest('[data-gallery-cards]') as any;
+      if (gc) {
+        const exposed = gc.__vueParentComponent?.exposed;
+        if (exposed?.setCardSrc) {
+          exposed.setCardSrc(path, src);
+        }
+      }
     }
     observerRef.value?.unobserve(card); // loaded — stop watching
   });

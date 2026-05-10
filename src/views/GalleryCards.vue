@@ -51,7 +51,7 @@ const displayItems = computed(() =>
 
 <template>
   <!-- D-09: NSkeleton loading state -->
-  <div v-if="loadingImages" class="content-grid">
+  <div data-gallery-cards class="gallery-cards" v-if="loadingImages" style="display: contents">
     <div v-for="i in skeletonCount" :key="i" class="skeleton-card">
       <n-skeleton :height="160" width="100%" :sharp="false" />
     </div>
@@ -64,7 +64,8 @@ const displayItems = computed(() =>
     :column-width="160"
     :gap="4"
     :min-columns="1"
-    class="content-grid"
+    class="gallery-cards content-grid"
+    data-gallery-cards
   >
     <template #default="{ item, index }">
       <div

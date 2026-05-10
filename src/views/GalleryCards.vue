@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { NSkeleton, NIcon } from 'naive-ui';
 import { FolderOutline } from '@vicons/ionicons5';
 import { MasonryWall } from '@yeger/vue-masonry-wall';
@@ -32,7 +32,6 @@ const skeletonCount = ref(12);
 // 图片 src 状态：src 为空时显示占位图，进入视口后加载真实 URL
 const imageSrcMap = ref<Map<string, string>>(new Map());
 
-// 初始化时所有图片 src 为空，由 Gallery.vue 的 IntersectionObserver 驱动加载
 function getCardSrc(path: string): string {
   return imageSrcMap.value.get(path) ?? '';
 }
@@ -42,19 +41,66 @@ function setCardSrc(path: string, src: string) {
   imageSrcMap.value.set(path, src);
 }
 
+// GalleryCards 自身的懒加载 observer，完全独立于 Gallery.vue
+function startSelfObserver() {
+  const obs = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      const card = entry.target as HTMLElement;
+      const path = card.dataset.imagePath;
+      if (!path) return;
+      // 直接 import convertFileSrc，避免依赖 Gallery.vue 的 galleryCardsRef
+      import('@tauri-apps/api/core').then(({ convertFileSrc }) => {
+        const src = convertFileSrc(path.replace(/\\/g, '/'));
+        console.log('[GalleryCards] self-observer setCardSrc', { path, src });
+        setCardSrc(path, src);
+      });
+      obs.unobserve(card);
+    });
+  }, { root: null, rootMargin: '200px', threshold: 0.01 });
+
+  const poll = setInterval(() => {
+    const cards = document.querySelectorAll<HTMLElement>('[data-image-path]');
+    if (cards.length > 0) {
+      clearInterval(poll);
+      cards.forEach((card) => obs.observe(card));
+      console.log('[GalleryCards] self-observer attached to', cards.length, 'cards');
+    }
+  }, 100);
+  return obs;
+}
+
+let selfObserver: IntersectionObserver | null = null;
+
+onMounted(() => {
+  console.log('[GalleryCards] mounted, images:', props.images.length, 'loadingImages:', props.loadingImages);
+  selfObserver = startSelfObserver();
+});
+
+onUnmounted(() => {
+  selfObserver?.disconnect();
+});
+
+watch(() => props.images, () => {
+  console.log('[GalleryCards] images changed, length:', props.images.length);
+  selfObserver?.disconnect();
+  selfObserver = startSelfObserver();
+});
+
+watch(() => props.loadingImages, (v) => {
+  console.log('[GalleryCards] loadingImages changed:', v);
+  if (v === false && props.images.length > 0) {
+    selfObserver?.disconnect();
+    selfObserver = startSelfObserver();
+  }
+});
+
 // 暴露图片路径列表，供 Gallery.vue 挂载 IntersectionObserver
 defineExpose({ getCardSrc, setCardSrc, imageCount: computed(() => props.images.length) });
 
 const displayItems = computed(() =>
   props.images.map((i) => ({ ...i, _type: 'image' as const }))
 );
-
-watch(() => props.images, (newImages) => {
-  console.log('[GalleryCards] props.images changed:', newImages.length);
-});
-watch(() => props.loadingImages, (v) => {
-  console.log('[GalleryCards] props.loadingImages changed:', v);
-});
 </script>
 
 <template>

@@ -92,6 +92,7 @@
 | Phase 3 | COMPLETED | 4/4 plans executed |
 | Phase 4 | COMPLETED | 2/2 plans executed |
 | Phase 5 | COMPLETED | 1/1 plan executed — Apple Photos gallery redesign |
+| Phase 6 | IN PROGRESS | 待讨论 — 瀑布流 + 面包屑导航 |
 
 ## Recent Commits
 
@@ -112,3 +113,9 @@ ce8fa2b refactor(gallery): 移除搜索结果缓存，仅保留页面状态恢�
 
 Plans:
 - [x] 05-01-PLAN.md — Apple Photos gallery redesign (3 tasks: sidebar + cards + integration)
+
+### Phase 6: 瀑布流布局 + 面包屑导航
+
+**Goal:** Switch image grid to true masonry waterfall layout (CSS column-count or masonry JS), replace path bar with hierarchical breadcrumb navigation showing folder hierarchy of the first visible image, enable click on breadcrumb segments to jump to any ancestor folder, keep UI clean and responsive.
+**Depends on:** Phase 5
+**Plans:** 0 plans — pending discuss-phase

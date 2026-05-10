@@ -208,11 +208,13 @@ async function loadImagesForDirectory(dirPath: string, reset = true) {
       limit: limit.value,
     });
     console.log('[Gallery] loadImagesForDirectory result:', { count: result.images.length, paths: result.images.map(i => i.path) });
+    console.log('[Gallery] passing to GalleryCards:', result.images.slice(0, 2));
     if (reset) {
       images.value = result.images;
     } else {
       images.value.push(...result.images);
     }
+    console.log('[Gallery] images set:', images.value.length, 'loadingImages:', loadingImages.value);
     hasMore.value = result.has_more;
     if (reset) {
       // Wait for MasonryWall async redraw() to finish — fillColumns is deeply

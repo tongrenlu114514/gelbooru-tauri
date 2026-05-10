@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { NSkeleton, NIcon } from 'naive-ui';
 import { FolderOutline } from '@vicons/ionicons5';
 import { MasonryWall } from '@yeger/vue-masonry-wall';
@@ -48,6 +48,13 @@ defineExpose({ getCardSrc, setCardSrc, imageCount: computed(() => props.images.l
 const displayItems = computed(() =>
   props.images.map((i) => ({ ...i, _type: 'image' as const }))
 );
+
+watch(() => props.images, (newImages) => {
+  console.log('[GalleryCards] props.images changed:', newImages.length);
+});
+watch(() => props.loadingImages, (v) => {
+  console.log('[GalleryCards] props.loadingImages changed:', v);
+});
 </script>
 
 <template>

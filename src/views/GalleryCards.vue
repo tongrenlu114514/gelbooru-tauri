@@ -101,28 +101,18 @@ const displayItems = computed(() =>
   margin-bottom: 4px;
 }
 
-/* 图片容器：维持占位高度直到图片加载完成 */
+/* 图片容器：宽度固定（columns宽度），高度由图片原始比例决定 */
 .card-image-wrapper {
   position: relative;
   width: 100%;
-  min-height: 120px;
   background: rgba(0, 0, 0, 0.04);
 }
 
-/* 占位图：静态纯色，避免 animated gradient 持续触发 paint */
-.card-placeholder {
-  position: absolute;
-  inset: 0;
-  background: #e5e5e5;
-}
-
-/* 真实图片：opacity 淡入过渡，轻量 GPU 合成 */
+/* 真实图片：宽度100%，高度auto，保持原始宽高比 */
 .card-img {
-  position: absolute;
-  inset: 0;
+  display: block;
   width: 100%;
-  height: 100%;
-  object-fit: cover;
+  height: auto;
   opacity: 0;
   transition: opacity 0.3s ease;
   /* compositor-only 属性，滚动时不会触发 layout/paint */

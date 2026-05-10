@@ -299,7 +299,7 @@ pub async fn get_directory_images(
     validate_path(&dir_path)?;
 
     let offset = page.unwrap_or(0) * limit.unwrap_or(50);
-    let lim = limit.unwrap_or(50).min(200);
+    let lim = limit.unwrap_or(50000).min(50000);
     let result = get_directory_images_async(PathBuf::from(&dir_path), offset, lim).await;
 
     Ok(result)

@@ -8,6 +8,8 @@ import {
   NModal,
   NLayout,
   NLayoutContent,
+  NBreadcrumb,
+  NBreadcrumbItem,
   useMessage,
   useDialog,
   NSpin,
@@ -76,7 +78,17 @@ const showPreview = ref(false);
 const previewIndex = ref(0);
 
 const currentImage = computed(() => images.value[previewIndex.value]);
-const currentPath = computed(() => selectedKey.value || '');
+
+// Breadcrumb segments: path relative to downloadPath, split into segments
+const breadcrumbSegments = computed(() => {
+  if (!selectedKey.value || !settingsStore.downloadPath) return [];
+  const normalizedPath = selectedKey.value.replace(/\\/g, '/');
+  const normalizedRoot = settingsStore.downloadPath.replace(/\\/g, '/');
+  if (!normalizedPath.startsWith(normalizedRoot)) return [];
+  const relative = normalizedPath.slice(normalizedRoot.length).replace(/^\/+|\/+$/g, '');
+  if (!relative) return [];
+  return relative.split('/');
+});
 
 // Parent path: strip last path segment
 const parentPath = computed(() => {
@@ -85,15 +97,6 @@ const parentPath = computed(() => {
   parts.pop();
   return parts.join('/') || null;
 });
-
-async function openCurrentFolder() {
-  if (!currentPath.value) return;
-  try {
-    await invoke('open_file', { path: currentPath.value });
-  } catch (error) {
-    console.error('Failed to open folder:', error);
-  }
-}
 
 function openPreview(index: number) {
   previewIndex.value = index;
@@ -146,9 +149,39 @@ function handleImageError(event: Event, path: string) {
     .catch(() => {});
 }
 
-function enterSubdir(subdir: SubDirInfo) {
+async function enterSubdir(subdir: SubDirInfo) {
+  if (selectedKey.value === subdir.path) return; // Same folder — no-op
   selectedKey.value = subdir.path;
-  loadImagesForDirectory(subdir.path);
+  await loadImagesForDirectory(subdir.path);
+  await nextTick();
+  scrollToFirstCard();
+}
+
+// Smooth-scroll to first image card in the masonry grid, but only if not already visible
+function scrollToFirstCard() {
+  const grid = document.querySelector('.content-grid');
+  if (!grid) return;
+  const firstCard = grid.querySelector<HTMLElement>('[data-image-path]');
+  if (!firstCard) return;
+  const rect = firstCard.getBoundingClientRect();
+  const inViewport = rect.top >= 0 && rect.bottom <= window.innerHeight;
+  if (!inViewport) {
+    firstCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+
+// Navigate to ancestor folder via breadcrumb click, then scroll to first image in viewport
+function handleBreadcrumbClick(index: number) {
+  const prefix = breadcrumbSegments.value.slice(0, index + 1).join('/');
+  const normalizedRoot = settingsStore.downloadPath.replace(/\\/g, '/');
+  const targetPath = `${normalizedRoot}/${prefix}`;
+  if (targetPath === selectedKey.value) return; // Already in this folder — no-op
+  const targetSubdir: SubDirInfo = {
+    path: targetPath,
+    name: breadcrumbSegments.value[index],
+    imageCount: 0,
+  };
+  enterSubdir(targetSubdir);
 }
 
 async function deleteImage(index: number) {
@@ -177,8 +210,8 @@ async function deleteImage(index: number) {
 
 function goUp() {
   if (!parentPath.value) return;
-  selectedKey.value = parentPath.value;
-  loadImagesForDirectory(parentPath.value);
+  const upSubdir: SubDirInfo = { path: parentPath.value, name: '..', imageCount: 0 };
+  enterSubdir(upSubdir);
 }
 
 async function refresh() {
@@ -243,10 +276,21 @@ defineExpose({ loadVisibleImages });
 
     <n-layout style="height: calc(100vh - 140px)">
       <n-layout-content content-style="padding: 12px">
-        <!-- Path bar -->
-        <div v-if="selectedKey" class="path-bar" @click="openCurrentFolder">
-          <n-icon :size="16"><FolderOpenOutline /></n-icon>
-          <span class="path-text">{{ currentPath }}</span>
+        <!-- Breadcrumb navigation: replaces flat .path-bar -->
+        <div v-if="breadcrumbSegments.length > 0" class="breadcrumb-bar">
+          <n-breadcrumb>
+            <n-breadcrumb-item
+              v-for="(segment, i) in breadcrumbSegments"
+              :key="i"
+              :clickable="i < breadcrumbSegments.length - 1"
+              @click="i < breadcrumbSegments.length - 1 && handleBreadcrumbClick(i)"
+            >
+              <n-icon :size="14" color="#f0a020" style="margin-right: 4px">
+                <FolderOpenOutline />
+              </n-icon>
+              {{ segment }}
+            </n-breadcrumb-item>
+          </n-breadcrumb>
         </div>
 
         <!-- Folder list: flat horizontal navigation above image grid -->
@@ -362,26 +406,12 @@ defineExpose({ loadVisibleImages });
   padding: 0;
 }
 
-.path-bar {
+/* Replaces .path-bar — flat breadcrumb bar per UI-SPEC */
+.breadcrumb-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
   margin-bottom: 8px;
-  background: #f5f5f5;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-
-.path-bar:hover {
-  background: #ebebeb;
-}
-
-.path-text {
-  font-size: 13px;
-  color: #666;
-  word-break: break-all;
+  padding: 0;
 }
 
 .folder-list {

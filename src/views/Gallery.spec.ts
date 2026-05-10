@@ -150,7 +150,7 @@ describe('Gallery.vue — IntersectionObserver lazy loading', () => {
     const wrapper = mount(Gallery, BASE_OPTS);
     await flushPromises();
 
-    expect(fakeIntersectionObserver).toHaveBeenCalledTimes(1);
+    expect(fakeIntersectionObserver).toHaveBeenCalledTimes(2); // image lazy load + infinite scroll
     const observerCall = fakeIntersectionObserver.mock.calls[0] as [
       callback: (entries: IntersectionObserverEntry[]) => void,
       options?: IntersectionObserverInit,
@@ -200,6 +200,7 @@ describe('Gallery.vue — IntersectionObserver lazy loading', () => {
     const vm = wrapper.vm as unknown as Record<string, unknown>;
     const fn = vm.loadVisibleImages as (() => void) | undefined;
     expect(fn).toBeDefined();
+    observeSpy.mockClear(); // reset mount-time observe calls
     fn!();
 
     // Verify observe was called for each card with data-image-path
@@ -283,13 +284,15 @@ describe('Gallery.vue — IntersectionObserver lazy loading', () => {
     const wrapper = mount(Gallery, BASE_OPTS);
     await flushPromises();
 
-    const observer = fakeIntersectionObserver.mock.results[0].value as {
-      disconnect: ReturnType<typeof vi.fn>;
-    };
+    const [observer, loadMoreObserver] = fakeIntersectionObserver.mock.results.map(
+      (r) => r.value as { disconnect: ReturnType<typeof vi.fn> }
+    );
 
     wrapper.unmount();
 
-    expect(observer.disconnect).toHaveBeenCalledTimes(1);
+    // Each observer is disconnected on unmount (may be called additional times if refresh was triggered)
+    expect(observer.disconnect).toHaveBeenCalled();
+    expect(loadMoreObserver.disconnect).toHaveBeenCalled();
   });
 
   // -------------------------------------------------------------------------

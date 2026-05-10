@@ -124,6 +124,9 @@ pub struct DirectoryImages {
     pub subdirs: Vec<SubDirInfo>,
     pub images: Vec<ImageInfo>,
     pub total: usize,
+    pub has_more: bool,
+    pub offset: usize,
+    pub limit: usize,
 }
 
 #[derive(Serialize)]
@@ -287,11 +290,17 @@ pub async fn get_directory_tree(
 }
 
 #[tauri::command]
-pub async fn get_directory_images(dir_path: String) -> Result<DirectoryImages, String> {
+pub async fn get_directory_images(
+    dir_path: String,
+    page: Option<usize>,
+    limit: Option<usize>,
+) -> Result<DirectoryImages, String> {
     // Validate path for security
     validate_path(&dir_path)?;
 
-    let result = get_directory_images_async(PathBuf::from(&dir_path)).await;
+    let offset = page.unwrap_or(0) * limit.unwrap_or(50);
+    let lim = limit.unwrap_or(50).min(200);
+    let result = get_directory_images_async(PathBuf::from(&dir_path), offset, lim).await;
 
     Ok(result)
 }
@@ -611,7 +620,11 @@ async fn count_images_async(dir: std::path::PathBuf) -> (usize, Option<String>) 
 }
 
 /// List subdirectories and images for a given directory path asynchronously.
-async fn get_directory_images_async(dir_path: std::path::PathBuf) -> DirectoryImages {
+async fn get_directory_images_async(
+    dir_path: std::path::PathBuf,
+    offset: usize,
+    limit: usize,
+) -> DirectoryImages {
     // Recursively collect all images under dir_path
     let mut images_with_time: Vec<(String, std::time::SystemTime)> = Vec::new();
     collect_images_recursive(&dir_path, &mut images_with_time);
@@ -619,20 +632,28 @@ async fn get_directory_images_async(dir_path: std::path::PathBuf) -> DirectoryIm
     // Sort by modification time descending (newest first)
     images_with_time.sort_by(|a, b| b.1.cmp(&a.1));
 
+    let total = images_with_time.len();
+    let has_more = offset + limit < total;
+
+    // Paginate: only collect the requested slice
     let images: Vec<ImageInfo> = images_with_time
         .into_iter()
+        .skip(offset)
+        .take(limit)
         .map(|(path, _)| {
             let name = path.rsplit(['/', '\\']).next().unwrap_or(&path).to_string();
             ImageInfo { path, name }
         })
         .collect();
 
-    let total = images.len();
     // No folder grouping — flat image list only; API shape preserved
     DirectoryImages {
         subdirs: Vec::new(),
         images,
         total,
+        has_more,
+        offset,
+        limit,
     }
 }
 
@@ -859,19 +880,53 @@ mod tests {
         fs::write(temp.path().join("direct.jpg"), b"fake").unwrap();
         fs::write(temp.path().join("direct.gif"), b"fake").unwrap();
 
-        let result = super::get_directory_images_async(temp.path().to_path_buf()).await;
+        let result = super::get_directory_images_async(temp.path().to_path_buf(), 0, 50).await;
         // Recursive: all 4 images collected
         assert_eq!(result.total, 4, "All images under dir_path (recursive)");
         // No folder grouping
         assert_eq!(result.subdirs.len(), 0, "No folder grouping");
-        // Images sorted by mtime desc
+        // Pagination fields
+        assert_eq!(result.offset, 0);
+        assert_eq!(result.limit, 50);
+        assert!(!result.has_more, "has_more false since only 4 images < limit 50");
+        // All items are images
         assert!(
-            result.images.first().map_or(false, |i| {
-                // At least verify we get images sorted (not guaranteed order on same mtime)
-                result.images.iter().all(|img| img.path.ends_with(".jpg") || img.path.ends_with(".png") || img.path.ends_with(".gif"))
+            result.images.iter().all(|img| {
+                img.path.ends_with(".jpg") || img.path.ends_with(".png") || img.path.ends_with(".gif")
             }),
             "All entries are images"
         );
+    }
+
+    #[tokio::test]
+    async fn get_directory_images_paginates_correctly() {
+        use std::fs;
+        let temp = tempfile::TempDir::new().unwrap();
+        // Create 10 images
+        for i in 0..10 {
+            fs::write(temp.path().join(format!("img{}.jpg", i)), b"fake").unwrap();
+        }
+
+        // Page 0, limit 3
+        let r0 = super::get_directory_images_async(temp.path().to_path_buf(), 0, 3).await;
+        assert_eq!(r0.images.len(), 3);
+        assert_eq!(r0.total, 10);
+        assert!(r0.has_more);
+        assert_eq!(r0.offset, 0);
+        assert_eq!(r0.limit, 3);
+
+        // Page 1, limit 3
+        let r1 = super::get_directory_images_async(temp.path().to_path_buf(), 3, 3).await;
+        assert_eq!(r1.images.len(), 3);
+        assert!(r1.has_more);
+        assert_eq!(r1.offset, 3);
+        assert_eq!(r1.limit, 3);
+
+        // Page 3 (last), limit 3 — only 1 remaining
+        let r3 = super::get_directory_images_async(temp.path().to_path_buf(), 9, 3).await;
+        assert_eq!(r3.images.len(), 1);
+        assert!(!r3.has_more);
+        assert!(r3.offset < r3.total);
     }
 
     // is_image helper test

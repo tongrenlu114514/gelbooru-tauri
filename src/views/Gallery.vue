@@ -40,6 +40,9 @@ function getPreviewSrc(path: string): string {
 // IntersectionObserver — lazy load images as they enter the viewport
 const observerRef = ref<IntersectionObserver | null>(null);
 
+// Infinite scroll observer for "load more" sentinel
+const loadMoreObserverRef = ref<IntersectionObserver | null>(null);
+
 function observeCallback(entries: IntersectionObserverEntry[]) {
   entries.forEach((entry) => {
     if (!entry.isIntersecting) return;
@@ -61,10 +64,17 @@ function loadVisibleImages() {
 }
 
 const selectedKey = ref<string | null>(null);
-const subdirs = ref<SubDirInfo[]>([]);
 const images = ref<ImageInfo[]>([]);
 const loadingTree = ref(false);
 const loadingImages = ref(false);
+
+// Pagination state
+const page = ref(0);
+const limit = ref(50);
+const hasMore = ref(true);
+
+// Sentinel ref for infinite scroll trigger
+const loadMoreRef = ref<HTMLElement | null>(null);
 
 const showPreview = ref(false);
 const previewIndex = ref(0);
@@ -114,21 +124,41 @@ function handleKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') showPreview.value = false;
 }
 
-async function loadImagesForDirectory(dirPath: string) {
-  loadingImages.value = true;
+async function loadImagesForDirectory(dirPath: string, reset = true) {
+  if (reset) {
+    loadingImages.value = true;
+    page.value = 0;
+    images.value = [];
+  } else {
+    loadingImages.value = true;
+  }
   try {
-    const result = await invoke<{ subdirs: SubDirInfo[]; images: ImageInfo[]; total: number }>(
-      'get_directory_images',
-      { dirPath }
-    );
-    subdirs.value = result.subdirs;
-    images.value = result.images;
-    await nextTick();
-    loadVisibleImages();
+    const result = await invoke<{
+      subdirs: SubDirInfo[];
+      images: ImageInfo[];
+      total: number;
+      has_more: boolean;
+      offset: number;
+      limit: number;
+    }>('get_directory_images', {
+      dirPath,
+      page: page.value,
+      limit: limit.value,
+    });
+    if (reset) {
+      images.value = result.images;
+    } else {
+      images.value.push(...result.images);
+    }
+    hasMore.value = result.has_more;
+    if (reset) {
+      await nextTick();
+      loadVisibleImages();
+      setupLoadMoreObserver();
+    }
   } catch (error) {
     console.error('Failed to load images:', error);
-    subdirs.value = [];
-    images.value = [];
+    if (reset) images.value = [];
   } finally {
     loadingImages.value = false;
   }
@@ -153,6 +183,19 @@ function scrollToFirstCard() {
   if (!inViewport) {
     firstCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
+}
+
+// Infinite scroll: sentinel enters viewport → load next page
+function setupLoadMoreObserver() {
+  const sentinel = loadMoreRef.value;
+  if (!sentinel || loadMoreObserverRef.value) return;
+  loadMoreObserverRef.value = new IntersectionObserver((entries) => {
+    if (entries[0].isIntersecting && hasMore.value && !loadingImages.value) {
+      page.value++;
+      loadImagesForDirectory(selectedKey.value!, false);
+    }
+  }, { rootMargin: '200px', threshold: 0.01 });
+  loadMoreObserverRef.value.observe(sentinel);
 }
 
 // Navigate to ancestor folder via breadcrumb click, then scroll to first image in viewport
@@ -195,9 +238,13 @@ async function deleteImage(index: number) {
 
 async function refresh() {
   observerRef.value?.disconnect();
+  loadMoreObserverRef.value?.disconnect();
+  observerRef.value = null;
+  loadMoreObserverRef.value = null;
   selectedKey.value = null;
-  subdirs.value = [];
   images.value = [];
+  page.value = 0;
+  hasMore.value = true;
   await loadTree();
 }
 
@@ -227,10 +274,13 @@ onMounted(() => {
     rootMargin: '200px',
     threshold: 0.01,
   });
+  // Setup infinite scroll observer once sentinel is rendered
+  nextTick(() => setupLoadMoreObserver());
 });
 
 onUnmounted(() => {
   observerRef.value?.disconnect();
+  loadMoreObserverRef.value?.disconnect();
 });
 
 watch(
@@ -283,15 +333,17 @@ defineExpose({ loadVisibleImages });
           </n-breadcrumb>
         </div>
 
-        <!-- Image card grid -->
+        <!-- Image card grid + infinite scroll sentinel -->
         <GalleryCards
           :images="images"
-          :subdirs="subdirs"
           :loading-images="loadingImages"
           :selected-key="selectedKey"
           @open-preview="openPreview"
-          @enter-subdir="enterSubdir"
         />
+        <!-- Infinite scroll: sentinel below masonry triggers next page load -->
+        <div ref="loadMoreRef" class="load-more-sentinel">
+          <n-spin v-if="loadingImages" size="small" />
+        </div>
       </n-layout-content>
     </n-layout>
 
@@ -359,14 +411,16 @@ defineExpose({ loadVisibleImages });
   padding: 0;
 }
 
-.preview-container {
+/* Infinite scroll sentinel: thin div below masonry grid */
+.load-more-sentinel {
   display: flex;
-  flex-direction: column;
+  justify-content: center;
   align-items: center;
-  gap: 16px;
+  padding: 16px;
+  min-height: 40px;
 }
 
-.preview-nav {
+.preview-container {
   display: flex;
   align-items: center;
   gap: 16px;

@@ -17,7 +17,6 @@ export interface SubDirInfo {
 
 const props = defineProps<{
   images: ImageInfo[];
-  subdirs: SubDirInfo[];
   loadingImages: boolean;
   selectedKey: string | null;
 }>();

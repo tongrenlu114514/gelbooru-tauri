@@ -97,6 +97,9 @@ const displayItems = computed(() =>
     </n-icon>
     <p class="empty-text">该目录下暂无图片</p>
   </div>
+
+  <!-- DEBUG: show what displayItems looks like -->
+  <pre v-if="!loadingImages" style="position:fixed;bottom:0;left:0;background:#000;color:#0f0;z-index:9999;font-size:11px;max-height:200px;overflow:scroll">{{ JSON.stringify({ displayItems_count: displayItems.length, first3: displayItems.slice(0,3) }) }}</pre>
 </template>
 
 <style scoped>

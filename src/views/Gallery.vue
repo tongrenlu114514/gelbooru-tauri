@@ -170,19 +170,19 @@ async function deleteImage(index: number) {
     content: `确定要删除 "${img.name}" 吗？此操作不可撤销。`,
     positiveText: '删除',
     negativeText: '取消',
-    onPositiveClick: async () => {
-      try {
-        await invoke('delete_image', { path: img.path });
-        images.value.splice(index, 1);
-        if (showPreview.value && previewIndex.value >= images.value.length) {
-          previewIndex.value = Math.max(0, images.value.length - 1);
-        }
-        if (images.value.length === 0) showPreview.value = false;
-        message.success('删除成功');
-        await refresh();
-      } catch (error) {
-        message.error(`删除失败: ${error}`);
-      }
+    onPositiveClick: () => {
+      invoke('delete_image', { path: img.path })
+        .then(() => {
+          images.value.splice(index, 1);
+          if (showPreview.value && previewIndex.value >= images.value.length) {
+            previewIndex.value = Math.max(0, images.value.length - 1);
+          }
+          if (images.value.length === 0) showPreview.value = false;
+          message.success('删除成功');
+        })
+        .catch((error: unknown) => {
+          message.error(`删除失败: ${error}`);
+        });
     },
   });
 }

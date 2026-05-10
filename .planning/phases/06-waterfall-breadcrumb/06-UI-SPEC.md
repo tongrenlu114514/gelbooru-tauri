@@ -35,14 +35,13 @@ Declared values (multiples of 4, per existing hardcoded usage):
 | xs | 4px | Masonry gap (D-01 gap=4), icon gaps, compact padding |
 | sm | 8px | Card filename inset (bottom: 8px, left/right: 8px), path bar padding |
 | md | 12px | Layout content padding |
-| lg | 16px | Section header margin-bottom, preview nav gap |
-| xl | 18px | Page title gap (used as internal) |
+| lg | 16px | Section header margin-bottom, preview nav gap, page title gap |
 | 2xl | 24px | Section-level spacing |
 
 **Exceptions (defined by locked decisions):**
 - Card min-width: `160px` — D-01: `column-width=160`
 - Masonry gap: `4px` — D-01: `gap=4`
-- Folder count badge padding: `1px 5px` — existing badge style (tiny pill)
+- Folder count badge padding: `1px 4px` — existing badge style (tiny pill)
 
 ---
 
@@ -140,7 +139,7 @@ Replaces `.path-bar` div. Sits above `.folder-list`.
 - Items: `.folder-item` with `gap: 4px`, `padding: 4px 8px`, `border-radius: 4px`
 - Icon: `<n-icon :size="14" color="#f0a020">` (accent)
 - Name: `13px`, `#333`
-- Count badge: `11px`, `#999`, `background: #f5f5f5`, `padding: 1px 5px`, `border-radius: 8px`
+- Count badge: `11px`, `#999`, `background: #f5f5f5`, `padding: 1px 4px`, `border-radius: 8px`
 - Active state: `background: #e8f0fe`
 - Hover: `background: #f0f0f0`
 - Divider: `|` character, `#ddd`, `12px`
@@ -225,4 +224,4 @@ Skeleton renders inside the masonry context — MasonryWall handles container; s
 - [ ] Dimension 5 Spacing: PASS (4-point scale: 4/8/12/16/24px, 160px card exception from D-01)
 - [ ] Dimension 6 Registry Safety: PASS (vue-masonry-wall view passed, no flags)
 
-**Approval:** pending — awaiting gsd-ui-checker verification
+**Approval:** 6/6 dimensions passed — BLOCKs resolved (xl→lg, 5px→4px), FLAGs accepted

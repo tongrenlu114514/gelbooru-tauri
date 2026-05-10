@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, computed } from 'vue';
 import { NSkeleton, NIcon } from 'naive-ui';
 import { FolderOutline } from '@vicons/ionicons5';
 import { convertFileSrc } from '@tauri-apps/api/core';
@@ -59,13 +59,6 @@ function handleImageError(event: Event, path: string) {
   });
 }
 
-onMounted(() => {
-  // MasonryWall handles reflow internally
-});
-
-onUnmounted(() => {
-  // MasonryWall handles reflow internally
-});
 </script>
 
 <template>
@@ -134,14 +127,6 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-/* D-03: Apple Photos style — fixed-column CSS Grid */
-.content-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 4px;
-  padding: 4px;
-}
-
 /* D-04: White #fff, border-radius 4px, no border */
 .gallery-card {
   position: relative;

@@ -47,6 +47,6 @@ Gelbooru Downloader 是一个基于 Tauri 2.x 的桌面应用程序，用于从 
 
 ## Current State
 
-Phase 03 (performance-reliability) complete — 220 tests passing (118 frontend Vitest + 102 Rust cargo), IntersectionObserver lazy loading, exponential backoff retry, async parallel directory scan, global HTTP rate limiting.
+Phase 06 (waterfall-breadcrumb) complete — MasonryWall waterfall layout replacing CSS Grid, hierarchical NBreadcrumb navigation with smooth scroll-to-first-card, all 118 frontend tests passing.
 
-Last updated: 2026-04-17
+Last updated: 2026-05-10

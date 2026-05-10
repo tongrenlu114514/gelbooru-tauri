@@ -130,13 +130,17 @@ function handleImageError(event: Event, path: string) {
 /* D-04: White #fff, border-radius 4px, no border */
 .gallery-card {
   position: relative;
-  aspect-ratio: 1;
   border-radius: 4px;
   overflow: hidden;
   background: #fff;
   cursor: pointer;
   transition: box-shadow 0.2s ease, z-index 0s;
   z-index: 0;
+}
+
+/* Let MasonryWall determine card height — no forced aspect ratio */
+.masonry-wall {
+  width: 100%;
 }
 
 /* D-04: hover box-shadow */

@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
-import { NSkeleton, NIcon } from 'naive-ui';
+import { computed } from 'vue';
+import { NIcon } from 'naive-ui';
 import { FolderOutline } from '@vicons/ionicons5';
-import { MasonryWall } from '@yeger/vue-masonry-wall';
+import { convertFileSrc } from '@tauri-apps/api/core';
 
 export interface ImageInfo {
   path: string;
@@ -27,132 +27,53 @@ const emit = defineEmits<{
   'enter-subdir': [subdir: SubDirInfo];
 }>();
 
-const skeletonCount = ref(12);
-
-// 图片 src 状态：src 为空时显示占位图，进入视口后加载真实 URL
-const imageSrcMap = ref<Map<string, string>>(new Map());
-
-function getCardSrc(path: string): string {
-  return imageSrcMap.value.get(path) ?? '';
+// 直接将 path 转换为 asset URL，供模板使用
+function cardSrc(path: string): string {
+  return convertFileSrc(path.replace(/\\/g, '/'));
 }
 
-function setCardSrc(path: string, src: string) {
-  console.log('[GalleryCards] setCardSrc', { path, src, map_size: imageSrcMap.value.size });
-  imageSrcMap.value.set(path, src);
-}
+// 暴露图片数量
+defineExpose({ imageCount: computed(() => props.images.length) });
 
-// GalleryCards 自身的懒加载 observer，完全独立于 Gallery.vue
-function startSelfObserver() {
-  const obs = new IntersectionObserver((entries) => {
-    entries.forEach((entry) => {
-      if (!entry.isIntersecting) return;
-      const card = entry.target as HTMLElement;
-      const path = card.dataset.imagePath;
-      if (!path) return;
-      // 直接 import convertFileSrc，避免依赖 Gallery.vue 的 galleryCardsRef
-      import('@tauri-apps/api/core').then(({ convertFileSrc }) => {
-        const src = convertFileSrc(path.replace(/\\/g, '/'));
-        console.log('[GalleryCards] self-observer setCardSrc', { path, src });
-        setCardSrc(path, src);
-      });
-      obs.unobserve(card);
-    });
-  }, { root: null, rootMargin: '200px', threshold: 0.01 });
-
-  const poll = setInterval(() => {
-    const cards = document.querySelectorAll<HTMLElement>('[data-image-path]');
-    if (cards.length > 0) {
-      clearInterval(poll);
-      cards.forEach((card) => obs.observe(card));
-      console.log('[GalleryCards] self-observer attached to', cards.length, 'cards');
-    }
-  }, 100);
-  return obs;
-}
-
-let selfObserver: IntersectionObserver | null = null;
-
-onMounted(() => {
-  console.log('[GalleryCards] mounted, images:', props.images.length, 'loadingImages:', props.loadingImages);
-  selfObserver = startSelfObserver();
-});
-
-onUnmounted(() => {
-  selfObserver?.disconnect();
-});
-
-watch(() => props.images, () => {
-  console.log('[GalleryCards] images changed, length:', props.images.length);
-  selfObserver?.disconnect();
-  selfObserver = startSelfObserver();
-});
-
-watch(() => props.loadingImages, (v) => {
-  console.log('[GalleryCards] loadingImages changed:', v);
-  if (v === false && props.images.length > 0) {
-    selfObserver?.disconnect();
-    selfObserver = startSelfObserver();
-  }
-});
-
-// 暴露图片路径列表，供 Gallery.vue 挂载 IntersectionObserver
-defineExpose({ getCardSrc, setCardSrc, imageCount: computed(() => props.images.length) });
-
+// Simple computed: MasonryWall receives the same reactive array as props.images.
+// On load-more: images.value.push() → props.images array grows → computed re-runs → MasonryWall renders new items.
+// On reset/switch: images.value = newArray → array ref changes → computed re-runs → full rebuild.
 const displayItems = computed(() =>
   props.images.map((i) => ({ ...i, _type: 'image' as const }))
 );
 </script>
 
 <template>
-  <!-- D-09: NSkeleton loading state -->
-  <div data-gallery-cards class="gallery-cards" v-if="loadingImages" style="display: contents">
-    <div v-for="i in skeletonCount" :key="i" class="skeleton-card">
-      <n-skeleton :height="160" width="100%" :sharp="false" />
+  <!-- Pure CSS masonry: column-count does NOT recreate DOM on item changes → scroll position stable -->
+  <div v-if="displayItems.length > 0" class="gallery-cards content-grid" data-gallery-cards>
+    <div
+      v-for="(item, index) in displayItems"
+      :key="item.path"
+      class="gallery-card"
+      :data-image-path="item.path"
+      @click="emit('open-preview', index)"
+    >
+      <!-- 占位背景 + 真实图片叠加 -->
+      <div class="card-image-wrapper">
+        <div class="card-placeholder" />
+        <img
+          :src="cardSrc(item.path)"
+          :alt="item.name"
+          class="card-img card-img-loaded"
+          @error="($event.target as HTMLImageElement | null)?.remove()"
+        />
+      </div>
+      <div class="card-filename">{{ item.name }}</div>
     </div>
   </div>
 
-  <!-- Masonry grid: replaces CSS Grid auto-fill with @yeger/vue-masonry-wall -->
-  <MasonryWall
-    v-else-if="displayItems.length > 0"
-    :items="displayItems"
-    :column-width="160"
-    :gap="4"
-    :min-columns="1"
-    class="gallery-cards content-grid"
-    data-gallery-cards
-  >
-    <template #default="{ item, index }">
-      <div
-        class="gallery-card"
-        :data-image-path="item.path"
-        @click="emit('open-preview', index)"
-      >
-        <!-- 占位背景 + 真实图片叠加 -->
-        <div class="card-image-wrapper">
-          <div class="card-placeholder" />
-          <img
-            v-if="getCardSrc(item.path)"
-            :src="getCardSrc(item.path)"
-            :alt="item.name"
-            class="card-img card-img-loaded"
-            @error="getCardSrc(item.path) && (imageSrcMap.delete(item.path))"
-          />
-        </div>
-        <div class="card-filename">{{ item.name }}</div>
-      </div>
-    </template>
-  </MasonryWall>
-
   <!-- D-10: Empty state -->
-  <div v-else-if="selectedKey && !loadingImages" class="empty-state">
+  <div v-if="selectedKey && displayItems.length === 0 && !loadingImages" class="empty-state">
     <n-icon :size="64" depth="4">
       <FolderOutline />
     </n-icon>
     <p class="empty-text">该目录下暂无图片</p>
   </div>
-
-  <!-- DEBUG: show what displayItems looks like -->
-  <pre v-if="!loadingImages" style="position:fixed;bottom:0;left:0;background:#000;color:#0f0;z-index:9999;font-size:11px;max-height:200px;overflow:scroll">{{ JSON.stringify({ displayItems_count: displayItems.length, first3: displayItems.slice(0,3) }) }}</pre>
 </template>
 
 <style scoped>
@@ -168,9 +89,16 @@ const displayItems = computed(() =>
   min-height: 100px;
 }
 
-/* MasonryWall owns this layout */
-.masonry-wall {
-  width: 100%;
+/* Pure CSS masonry: column-count keeps all DOM nodes stable on item changes */
+.gallery-cards {
+  columns: 160px 3;
+  column-gap: 4px;
+}
+
+/* Break-inside ensures cards don't split across columns */
+.gallery-card {
+  break-inside: avoid;
+  margin-bottom: 4px;
 }
 
 /* 图片容器：维持占位高度直到图片加载完成 */
@@ -181,35 +109,28 @@ const displayItems = computed(() =>
   background: rgba(0, 0, 0, 0.04);
 }
 
-/* 占位图：灰色矩形，直到真实图片加载完成才隐藏 */
+/* 占位图：静态纯色，避免 animated gradient 持续触发 paint */
 .card-placeholder {
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, #e8e8e8 25%, #f5f5f5 50%, #e8e8e8 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
+  background: #e5e5e5;
 }
 
-@keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
-
-/* 真实图片：从模糊过渡到清晰 */
+/* 真实图片：opacity 淡入过渡，轻量 GPU 合成 */
 .card-img {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  filter: blur(8px);
-  transform: scale(1.05); /* 轻微放大掩盖模糊边界 */
-  transition: filter 0.4s ease, transform 0.4s ease;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  /* compositor-only 属性，滚动时不会触发 layout/paint */
+  will-change: opacity;
 }
 
 .card-img-loaded {
-  filter: none;
-  transform: none;
+  opacity: 1;
 }
 
 /* D-04: hover box-shadow */
@@ -254,13 +175,6 @@ const displayItems = computed(() =>
 
 .gallery-card:hover .card-filename {
   opacity: 1;
-}
-
-/* D-09: Skeleton card matching card dimensions */
-.skeleton-card {
-  border-radius: 4px;
-  overflow: hidden;
-  background: #fff;
 }
 
 /* D-10: Empty state centering */

@@ -10,6 +10,7 @@ import {
   NDivider,
   NGrid,
   NGi,
+  useMessage,
 } from 'naive-ui';
 import { useSettingsStore } from '@/stores/settings';
 import { storeToRefs } from 'pinia';
@@ -18,6 +19,7 @@ import { invoke } from '@tauri-apps/api/core';
 const settingsStore = useSettingsStore();
 const { theme, downloadPath, concurrentDownloads, proxyEnabled, proxyHost, proxyPort } =
   storeToRefs(settingsStore);
+const message = useMessage();
 
 async function saveSettings() {
   // Immediately persist all settings (including download_path) to the backend DB
@@ -43,7 +45,7 @@ async function saveSettings() {
   try {
     await invoke('set_proxy', { proxyUrl });
   } catch (error) {
-    console.error('Failed to set proxy:', error);
+    message.error('代理设置失败: ' + (error as Error).message);
   }
 }
 </script>

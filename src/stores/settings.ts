@@ -20,7 +20,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const sidebarCollapsed = ref(false);
   const downloadPath = ref('');
   const concurrentDownloads = ref(3);
-  const proxyEnabled = ref(true);
+  const proxyEnabled = ref(false);
   const proxyHost = ref('127.0.0.1');
   const proxyPort = ref(7897);
 
@@ -53,6 +53,22 @@ export const useSettingsStore = defineStore('settings', () => {
     try {
       if (proxyEnabled.value) {
         const proxyUrl = `http://${proxyHost.value}:${proxyPort.value}`;
+        // Check proxy reachability before using it
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 3000);
+        try {
+          await fetch(proxyUrl, {
+            signal: controller.signal,
+            mode: 'no-cors',
+          });
+        } catch {
+          clearTimeout(timeout);
+          // Proxy unreachable — fall back to direct connection silently
+          console.error(`[Proxy] ${proxyUrl} unreachable, using direct connection`);
+          await invoke('set_proxy', { proxyUrl: null });
+          return;
+        }
+        clearTimeout(timeout);
         await invoke('set_proxy', { proxyUrl });
       } else {
         await invoke('set_proxy', { proxyUrl: null });

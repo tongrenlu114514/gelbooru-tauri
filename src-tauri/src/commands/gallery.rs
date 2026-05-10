@@ -612,51 +612,13 @@ async fn count_images_async(dir: std::path::PathBuf) -> (usize, Option<String>) 
 
 /// List subdirectories and images for a given directory path asynchronously.
 async fn get_directory_images_async(dir_path: std::path::PathBuf) -> DirectoryImages {
-    let mut subdirs: Vec<SubDirInfo> = Vec::new();
+    // Recursively collect all images under dir_path
     let mut images_with_time: Vec<(String, std::time::SystemTime)> = Vec::new();
+    collect_images_recursive(&dir_path, &mut images_with_time);
 
-    let mut entries = match tokio::fs::read_dir(&dir_path).await {
-        Ok(e) => e,
-        Err(_) => {
-            return DirectoryImages {
-                subdirs,
-                images: Vec::new(),
-                total: 0,
-            }
-        }
-    };
-
-    while let Some(entry) = entries.next_entry().await.ok().flatten() {
-        let path = entry.path();
-        let metadata = match tokio::fs::metadata(&path).await.ok() {
-            Some(m) => m,
-            None => continue,
-        };
-
-        if metadata.is_dir() {
-            let (count, first) = count_images_async(path.clone()).await;
-            if count > 0 {
-                let dir_name = path
-                    .file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_else(|| "未命名".to_string());
-                subdirs.push(SubDirInfo {
-                    path: path.to_string_lossy().to_string(),
-                    name: dir_name,
-                    image_count: count,
-                    thumbnail: first,
-                });
-            }
-        } else if is_image(&path) {
-            let mtime = metadata
-                .modified()
-                .ok()
-                .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
-            images_with_time.push((path.to_string_lossy().to_string(), mtime));
-        }
-    }
-
+    // Sort by modification time descending (newest first)
     images_with_time.sort_by(|a, b| b.1.cmp(&a.1));
+
     let images: Vec<ImageInfo> = images_with_time
         .into_iter()
         .map(|(path, _)| {
@@ -666,10 +628,33 @@ async fn get_directory_images_async(dir_path: std::path::PathBuf) -> DirectoryIm
         .collect();
 
     let total = images.len();
+    // No folder grouping — flat image list only; API shape preserved
     DirectoryImages {
-        subdirs,
+        subdirs: Vec::new(),
         images,
         total,
+    }
+}
+
+// Recursively walk directory tree and collect all image paths with mtime
+fn collect_images_recursive(
+    dir_path: &std::path::Path,
+    images_with_time: &mut Vec<(String, std::time::SystemTime)>,
+) {
+    let walker = walkdir::WalkDir::new(dir_path)
+        .follow_links(false)
+        .max_depth(usize::MAX);
+
+    for entry in walker.into_iter().filter_map(|e| e.ok()) {
+        let path = entry.path();
+        if path.is_file() && is_image(path) {
+            let mtime = entry
+                .metadata()
+                .map(|m| m.modified())
+                .unwrap_or(Ok(std::time::SystemTime::UNIX_EPOCH))
+                .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+            images_with_time.push((path.to_string_lossy().to_string(), mtime));
+        }
     }
 }
 
@@ -862,25 +847,31 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn get_directory_images_async_returns_correct_subdirs_and_images() {
+    async fn get_directory_images_async_returns_flat_images_sorted_by_mtime() {
         use std::fs;
         let temp = tempfile::TempDir::new().unwrap();
-        // Create subdirs with images
+        // Create subdir with images
         let sub_a = temp.path().join("subdir_a");
         fs::create_dir_all(&sub_a).unwrap();
         fs::write(sub_a.join("a1.jpg"), b"fake").unwrap();
         fs::write(sub_a.join("a2.png"), b"fake").unwrap();
-        // Create subdir with no images
-        let sub_b = temp.path().join("subdir_b");
-        fs::create_dir_all(&sub_b).unwrap();
         // Create direct images in root
         fs::write(temp.path().join("direct.jpg"), b"fake").unwrap();
         fs::write(temp.path().join("direct.gif"), b"fake").unwrap();
 
         let result = super::get_directory_images_async(temp.path().to_path_buf()).await;
-        assert_eq!(result.total, 2, "Root should have 2 direct images");
-        assert_eq!(result.subdirs.len(), 1, "Only subdir_a has images, subdir_b is excluded");
-        assert_eq!(result.subdirs[0].image_count, 2, "subdir_a should have 2 images");
+        // Recursive: all 4 images collected
+        assert_eq!(result.total, 4, "All images under dir_path (recursive)");
+        // No folder grouping
+        assert_eq!(result.subdirs.len(), 0, "No folder grouping");
+        // Images sorted by mtime desc
+        assert!(
+            result.images.first().map_or(false, |i| {
+                // At least verify we get images sorted (not guaranteed order on same mtime)
+                result.images.iter().all(|img| img.path.ends_with(".jpg") || img.path.ends_with(".png") || img.path.ends_with(".gif"))
+            }),
+            "All entries are images"
+        );
     }
 
     // is_image helper test

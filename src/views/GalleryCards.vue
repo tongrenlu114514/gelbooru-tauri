@@ -1,9 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { NSkeleton, NIcon } from 'naive-ui';
-import { FolderOutline } from '@vicons/ionicons5';
-import { convertFileSrc } from '@tauri-apps/api/core';
-import { imageBase64Cache } from '@/utils/lruCache';
 import { MasonryWall } from '@yeger/vue-masonry-wall';
 
 export interface ImageInfo {
@@ -17,10 +14,6 @@ export interface SubDirInfo {
   imageCount: number;
   thumbnail?: string;
 }
-
-export type DisplayItem =
-  | (ImageInfo & { _type: 'image' })
-  | (SubDirInfo & { _type: 'folder' });
 
 const props = defineProps<{
   images: ImageInfo[];
@@ -36,29 +29,24 @@ const emit = defineEmits<{
 
 const skeletonCount = ref(12);
 
-const displayItems = computed<DisplayItem[]>(() => [
-  ...props.subdirs.map((s) => ({ ...s, _type: 'folder' as const })),
-  ...props.images.map((i) => ({ ...i, _type: 'image' as const })),
-]);
+// 图片 src 状态：src 为空时显示占位图，进入视口后加载真实 URL
+const imageSrcMap = ref<Map<string, string>>(new Map());
 
-function getImageSrc(path: string): string {
-  if (!path) return '';
-  return convertFileSrc(path.replace(/\\/g, '/'));
+// 初始化时所有图片 src 为空，由 Gallery.vue 的 IntersectionObserver 驱动加载
+function getCardSrc(path: string): string {
+  return imageSrcMap.value.get(path) ?? '';
 }
 
-function handleImageError(event: Event, path: string) {
-  const img = event.target as HTMLImageElement;
-  if (!img || !path || imageBase64Cache.has(path)) return;
-  import('@tauri-apps/api/core').then(({ invoke }) => {
-    invoke<string>('get_local_image_base64', { path })
-      .then((base64) => {
-        imageBase64Cache.set(path, base64);
-        img.src = base64;
-      })
-      .catch(() => {});
-  });
+function setCardSrc(path: string, src: string) {
+  imageSrcMap.value.set(path, src);
 }
 
+// 暴露图片路径列表，供 Gallery.vue 挂载 IntersectionObserver
+defineExpose({ getCardSrc, setCardSrc, imageCount: computed(() => props.images.length) });
+
+const displayItems = computed(() =>
+  props.images.map((i) => ({ ...i, _type: 'image' as const }))
+);
 </script>
 
 <template>
@@ -80,38 +68,21 @@ function handleImageError(event: Event, path: string) {
   >
     <template #default="{ item, index }">
       <div
-        v-if="item._type === 'folder'"
-        class="gallery-card folder-card"
-        :data-image-path="item.thumbnail ?? ''"
-        @click="emit('enter-subdir', item)"
-      >
-        <div class="folder-preview">
-          <img
-            v-if="item.thumbnail"
-            :src="getImageSrc(item.thumbnail)"
-            alt=""
-            loading="lazy"
-            @error="handleImageError($event, item.thumbnail)"
-          />
-          <n-icon v-else :size="48" color="#999">
-            <FolderOutline />
-          </n-icon>
-        </div>
-        <div class="card-filename">{{ item.name }} ({{ item.imageCount }})</div>
-      </div>
-
-      <div
-        v-else
         class="gallery-card"
         :data-image-path="item.path"
-        @click="emit('open-preview', index - props.subdirs.length)"
+        @click="emit('open-preview', index)"
       >
-        <img
-          :src="getImageSrc(item.path)"
-          :alt="item.name"
-          loading="lazy"
-          @error="handleImageError($event, item.path)"
-        />
+        <!-- 占位背景 + 真实图片叠加 -->
+        <div class="card-image-wrapper">
+          <div class="card-placeholder" />
+          <img
+            v-if="getCardSrc(item.path)"
+            :src="getCardSrc(item.path)"
+            :alt="item.name"
+            class="card-img card-img-loaded"
+            @error="getCardSrc(item.path) && (imageSrcMap.delete(item.path))"
+          />
+        </div>
         <div class="card-filename">{{ item.name }}</div>
       </div>
     </template>
@@ -136,11 +107,51 @@ function handleImageError(event: Event, path: string) {
   cursor: pointer;
   transition: box-shadow 0.2s ease, z-index 0s;
   z-index: 0;
+  min-height: 100px;
 }
 
-/* Let MasonryWall determine card height — no forced aspect ratio */
+/* MasonryWall owns this layout */
 .masonry-wall {
   width: 100%;
+}
+
+/* 图片容器：维持占位高度直到图片加载完成 */
+.card-image-wrapper {
+  position: relative;
+  width: 100%;
+  min-height: 120px;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+/* 占位图：灰色矩形，直到真实图片加载完成才隐藏 */
+.card-placeholder {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, #e8e8e8 25%, #f5f5f5 50%, #e8e8e8 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* 真实图片：从模糊过渡到清晰 */
+.card-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: blur(8px);
+  transform: scale(1.05); /* 轻微放大掩盖模糊边界 */
+  transition: filter 0.4s ease, transform 0.4s ease;
+}
+
+.card-img-loaded {
+  filter: none;
+  transform: none;
 }
 
 /* D-04: hover box-shadow */
@@ -185,40 +196,6 @@ function handleImageError(event: Event, path: string) {
 
 .gallery-card:hover .card-filename {
   opacity: 1;
-}
-
-/* D-06: folder cards same as image cards — no text by default */
-.gallery-card.folder-card .card-filename {
-  opacity: 0;
-}
-
-.gallery-card.folder-card:hover .card-filename {
-  opacity: 1;
-}
-
-/* D-06: No text labels visible by default */
-.gallery-card img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-/* D-11: Folder preview area */
-.folder-preview {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  background: rgba(0, 0, 0, 0.02);
-}
-
-.folder-preview img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  opacity: 0.85;
 }
 
 /* D-09: Skeleton card matching card dimensions */

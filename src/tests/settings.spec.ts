@@ -37,7 +37,7 @@ describe('useSettingsStore', () => {
     expect(store.sidebarCollapsed).toBe(false);
     expect(store.downloadPath).toBe('');
     expect(store.concurrentDownloads).toBe(3);
-    expect(store.proxyEnabled).toBe(true);
+    expect(store.proxyEnabled).toBe(false);
     expect(store.proxyHost).toBe('127.0.0.1');
     expect(store.proxyPort).toBe(7897);
   });
@@ -92,7 +92,7 @@ describe('useSettingsStore', () => {
           theme: 'dark',
           sidebarCollapsed: false,
           concurrentDownloads: 3,
-          proxyEnabled: true,
+          proxyEnabled: false,
           proxyHost: '127.0.0.1',
           proxyPort: 7897,
         }),

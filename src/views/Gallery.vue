@@ -153,6 +153,13 @@ async function loadImagesForDirectory(dirPath: string, reset = true) {
     hasMore.value = result.has_more;
     if (reset) {
       await nextTick();
+      if (!observerRef.value) {
+        observerRef.value = new IntersectionObserver(observeCallback, {
+          root: null,
+          rootMargin: '200px',
+          threshold: 0.01,
+        });
+      }
       loadVisibleImages();
       setupLoadMoreObserver();
     }

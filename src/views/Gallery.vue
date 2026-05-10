@@ -50,14 +50,19 @@ function observeCallback(entries: IntersectionObserverEntry[]) {
     const path = card.dataset.imagePath;
     if (!path) return;
     const src = convertFileSrc(path.replace(/\\/g, '/'));
-    // Try galleryCardsRef first (works in real browser)
+    console.log('[Gallery] observeCallback fired', {
+      path,
+      src,
+      galleryCardsRef_null: galleryCardsRef.value === null,
+      galleryCardsRef_hasSetCardSrc:
+        galleryCardsRef.value !== null &&
+        typeof galleryCardsRef.value?.setCardSrc === 'function',
+    });
     if (galleryCardsRef.value && typeof galleryCardsRef.value.setCardSrc === 'function') {
       galleryCardsRef.value.setCardSrc(path, src);
     } else {
-      // Fallback: use data attribute to locate GalleryCards root element,
-      // then call setCardSrc via __vueParentComponent.exposed
-      const card = entry.target as HTMLElement;
       const gc = card.closest('[data-gallery-cards]') as any;
+      console.log('[Gallery] fallback gc:', gc, gc?.__vueParentComponent?.exposed);
       if (gc) {
         const exposed = gc.__vueParentComponent?.exposed;
         if (exposed?.setCardSrc) {
@@ -71,8 +76,13 @@ function observeCallback(entries: IntersectionObserverEntry[]) {
 
 function loadVisibleImages() {
   const grid = document.querySelector('.content-grid');
+  console.log('[Gallery] loadVisibleImages', {
+    grid_exists: !!grid,
+    observer_exists: !!observerRef.value,
+  });
   if (!grid || !observerRef.value) return;
   const cards = grid.querySelectorAll<HTMLElement>('[data-image-path]');
+  console.log('[Gallery] found cards:', cards.length);
   cards.forEach((card) => observerRef.value!.observe(card));
 }
 
@@ -80,12 +90,14 @@ function loadVisibleImages() {
 function waitForCards(timeoutMs: number): Promise<void> {
   return new Promise((resolve) => {
     if (document.querySelector('[data-image-path]')) {
+      console.log('[Gallery] waitForCards: cards already exist');
       resolve();
       return;
     }
     const observer = new MutationObserver(() => {
       if (document.querySelector('[data-image-path]')) {
         observer.disconnect();
+        console.log('[Gallery] waitForCards: MutationObserver found cards');
         resolve();
       }
     });
@@ -94,12 +106,14 @@ function waitForCards(timeoutMs: number): Promise<void> {
       if (document.querySelector('[data-image-path]')) {
         clearInterval(poll);
         observer.disconnect();
+        console.log('[Gallery] waitForCards: poll found cards after', Date.now() - start, 'ms');
         resolve();
         return;
       }
       if (Date.now() - start > timeoutMs) {
         clearInterval(poll);
         observer.disconnect();
+        console.log('[Gallery] waitForCards: timeout after', Date.now() - start, 'ms');
         resolve(); // don't block, just proceed
       }
     }, 50);
@@ -188,6 +202,7 @@ async function loadImagesForDirectory(dirPath: string, reset = true) {
       page: page.value,
       limit: limit.value,
     });
+    console.log('[Gallery] loadImagesForDirectory result:', { count: result.images.length, paths: result.images.map(i => i.path) });
     if (reset) {
       images.value = result.images;
     } else {

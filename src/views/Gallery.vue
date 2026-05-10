@@ -105,7 +105,6 @@ function handleKeydown(e: KeyboardEvent) {
 
 async function loadImagesForDirectory(dirPath: string) {
   loadingImages.value = true;
-  page.value = 0;
   images.value = [];
   try {
     const result = await invoke<{

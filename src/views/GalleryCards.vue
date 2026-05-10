@@ -60,6 +60,7 @@ const displayItems = computed(() =>
           :src="cardSrc(item.path)"
           :alt="item.name"
           class="card-img card-img-loaded"
+          loading="lazy"
           @error="($event.target as HTMLImageElement | null)?.remove()"
         />
       </div>

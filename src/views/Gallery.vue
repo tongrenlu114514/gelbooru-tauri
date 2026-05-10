@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue';
+import { ref, onMounted, onBeforeMount, onBeforeUnmount, onUnmounted, computed, watch } from 'vue';
 import {
   NButton,
   NSpace,
@@ -30,113 +30,30 @@ const message = useMessage();
 const dialog = useDialog();
 const settingsStore = useSettingsStore();
 
-const galleryCardsRef = ref<InstanceType<typeof GalleryCards> | null>(null);
+// Scroll restoration (sessionStorage round-trip)
+const SCROLL_STORAGE_KEY = 'gallery-scroll';
+
+function applyScrollTop(position: number) {
+  if (position <= 0) return;
+  nextTick().then(() => {
+    requestAnimationFrame(() => {
+      document.documentElement.scrollTop = position;
+    });
+  });
+}
 
 // Preview modal: use convertFileSrc for full-size image
 function getPreviewSrc(path: string): string {
   return convertFileSrc(path.replace(/\\/g, '/'));
 }
 
-// IntersectionObserver — lazy load images as they enter the viewport
-const observerRef = ref<IntersectionObserver | null>(null);
-
-// Infinite scroll observer for "load more" sentinel
-const loadMoreObserverRef = ref<IntersectionObserver | null>(null);
-
-function observeCallback(entries: IntersectionObserverEntry[]) {
-  entries.forEach((entry) => {
-    if (!entry.isIntersecting) return;
-    const card = entry.target as HTMLElement;
-    const path = card.dataset.imagePath;
-    if (!path) return;
-    const src = convertFileSrc(path.replace(/\\/g, '/'));
-    console.log('[Gallery] observeCallback fired', {
-      path,
-      src,
-      galleryCardsRef_null: galleryCardsRef.value === null,
-      galleryCardsRef_hasSetCardSrc:
-        galleryCardsRef.value !== null &&
-        typeof galleryCardsRef.value?.setCardSrc === 'function',
-    });
-    if (galleryCardsRef.value && typeof galleryCardsRef.value.setCardSrc === 'function') {
-      galleryCardsRef.value.setCardSrc(path, src);
-    } else {
-      const gc = card.closest('[data-gallery-cards]') as any;
-      console.log('[Gallery] fallback gc:', gc, gc?.__vueParentComponent?.exposed);
-      if (gc) {
-        const exposed = gc.__vueParentComponent?.exposed;
-        if (exposed?.setCardSrc) {
-          exposed.setCardSrc(path, src);
-        }
-      }
-    }
-    observerRef.value?.unobserve(card); // loaded — stop watching
-  });
-}
-
-function loadVisibleImages() {
-  const grid = document.querySelector('.content-grid');
-  console.log('[Gallery] loadVisibleImages', {
-    grid_exists: !!grid,
-    grid_tag: grid?.tagName,
-    grid_class: grid?.className,
-    grid_innerHTML: grid?.innerHTML?.slice(0, 200),
-    galleryCardsRef: galleryCardsRef.value,
-    galleryCardsRef_type: galleryCardsRef.value ? galleryCardsRef.value.constructor.name : 'null',
-    observer_exists: !!observerRef.value,
-  });
-  if (!grid || !observerRef.value) return;
-  const cards = grid.querySelectorAll<HTMLElement>('[data-image-path]');
-  console.log('[Gallery] found cards:', cards.length);
-  cards.forEach((card) => observerRef.value!.observe(card));
-}
-
-/** Wait for MasonryWall to finish populating [data-image-path] cards in the DOM */
-function waitForCards(timeoutMs: number): Promise<void> {
-  return new Promise((resolve) => {
-    if (document.querySelector('[data-image-path]')) {
-      console.log('[Gallery] waitForCards: cards already exist');
-      resolve();
-      return;
-    }
-    const observer = new MutationObserver(() => {
-      if (document.querySelector('[data-image-path]')) {
-        observer.disconnect();
-        console.log('[Gallery] waitForCards: MutationObserver found cards');
-        resolve();
-      }
-    });
-    const start = Date.now();
-    const poll = setInterval(() => {
-      if (document.querySelector('[data-image-path]')) {
-        clearInterval(poll);
-        observer.disconnect();
-        console.log('[Gallery] waitForCards: poll found cards after', Date.now() - start, 'ms');
-        resolve();
-        return;
-      }
-      if (Date.now() - start > timeoutMs) {
-        clearInterval(poll);
-        observer.disconnect();
-        console.log('[Gallery] waitForCards: timeout after', Date.now() - start, 'ms');
-        resolve(); // don't block, just proceed
-      }
-    }, 50);
-  });
-}
+// Pagination state
+const limit = ref(10000);
 
 const selectedKey = ref<string | null>(null);
 const images = ref<ImageInfo[]>([]);
 const loadingTree = ref(false);
 const loadingImages = ref(false);
-
-// Pagination state
-const page = ref(0);
-const limit = ref(50);
-const hasMore = ref(true);
-
-// Sentinel ref for infinite scroll trigger
-const loadMoreRef = ref<HTMLElement | null>(null);
 
 const showPreview = ref(false);
 const previewIndex = ref(0);
@@ -186,14 +103,10 @@ function handleKeydown(e: KeyboardEvent) {
   if (e.key === 'Escape') showPreview.value = false;
 }
 
-async function loadImagesForDirectory(dirPath: string, reset = true) {
-  if (reset) {
-    loadingImages.value = true;
-    page.value = 0;
-    images.value = [];
-  } else {
-    loadingImages.value = true;
-  }
+async function loadImagesForDirectory(dirPath: string) {
+  loadingImages.value = true;
+  page.value = 0;
+  images.value = [];
   try {
     const result = await invoke<{
       subdirs: SubDirInfo[];
@@ -204,38 +117,13 @@ async function loadImagesForDirectory(dirPath: string, reset = true) {
       limit: number;
     }>('get_directory_images', {
       dirPath,
-      page: page.value,
-      limit: limit.value,
+      page: 0,
+      limit: 10000,
     });
-    console.log('[Gallery] loadImagesForDirectory result:', { count: result.images.length, paths: result.images.map(i => i.path) });
-    console.log('[Gallery] passing to GalleryCards:', result.images.slice(0, 2));
-    if (reset) {
-      images.value = result.images;
-    } else {
-      images.value.push(...result.images);
-    }
-    console.log('[Gallery] images set:', images.value.length, 'loadingImages:', loadingImages.value);
-    hasMore.value = result.has_more;
-    if (reset) {
-      // Wait for MasonryWall async redraw() to finish — fillColumns is deeply
-      // recursive (N items × N nextTicks). Use MutationObserver to detect
-      // when [data-image-path] cards are actually in the DOM, then observe them.
-      if (!observerRef.value) {
-        observerRef.value = new IntersectionObserver(observeCallback, {
-          root: null,
-          rootMargin: '200px',
-          threshold: 0.01,
-        });
-      }
-      await waitForCards(5000);
-      console.log('[Gallery] after waitForCards, calling loadVisibleImages');
-      loadVisibleImages();
-      console.log('[Gallery] loadVisibleImages done, selectedKey:', selectedKey.value);
-      setupLoadMoreObserver();
-    }
+    images.value = result.images;
   } catch (error) {
     console.error('Failed to load images:', error);
-    if (reset) images.value = [];
+    images.value = [];
   } finally {
     loadingImages.value = false;
   }
@@ -260,19 +148,6 @@ function scrollToFirstCard() {
   if (!inViewport) {
     firstCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
-}
-
-// Infinite scroll: sentinel enters viewport → load next page
-function setupLoadMoreObserver() {
-  const sentinel = loadMoreRef.value;
-  if (!sentinel || loadMoreObserverRef.value) return;
-  loadMoreObserverRef.value = new IntersectionObserver((entries) => {
-    if (entries[0].isIntersecting && hasMore.value && !loadingImages.value) {
-      page.value++;
-      loadImagesForDirectory(selectedKey.value!, false);
-    }
-  }, { rootMargin: '200px', threshold: 0.01 });
-  loadMoreObserverRef.value.observe(sentinel);
 }
 
 // Navigate to ancestor folder via breadcrumb click, then scroll to first image in viewport
@@ -314,14 +189,8 @@ async function deleteImage(index: number) {
 }
 
 async function refresh() {
-  observerRef.value?.disconnect();
-  loadMoreObserverRef.value?.disconnect();
-  observerRef.value = null;
-  loadMoreObserverRef.value = null;
   selectedKey.value = null;
   images.value = [];
-  page.value = 0;
-  hasMore.value = true;
   await loadTree();
 }
 
@@ -343,14 +212,26 @@ async function loadTree() {
   }
 }
 
+onBeforeMount(() => {
+  const savedScroll = sessionStorage.getItem(SCROLL_STORAGE_KEY);
+  if (savedScroll) {
+    const n = Number(savedScroll);
+    if (!isNaN(n)) applyScrollTop(n);
+    sessionStorage.removeItem(SCROLL_STORAGE_KEY);
+  }
+});
+
 onMounted(() => {
   loadTree();
   window.addEventListener('keydown', handleKeydown);
 });
 
+onBeforeUnmount(() => {
+  sessionStorage.setItem(SCROLL_STORAGE_KEY, String(document.documentElement.scrollTop));
+});
+
 onUnmounted(() => {
-  observerRef.value?.disconnect();
-  loadMoreObserverRef.value?.disconnect();
+  // cleanup if needed
 });
 
 watch(
@@ -358,7 +239,7 @@ watch(
   () => refresh()
 );
 
-defineExpose({ loadVisibleImages });
+defineExpose({});
 </script>
 
 <template>
@@ -405,16 +286,11 @@ defineExpose({ loadVisibleImages });
 
         <!-- Image card grid + infinite scroll sentinel -->
         <GalleryCards
-          ref="galleryCardsRef"
           :images="images"
           :loading-images="loadingImages"
           :selected-key="selectedKey"
           @open-preview="openPreview"
         />
-        <!-- Infinite scroll: sentinel below masonry triggers next page load -->
-        <div ref="loadMoreRef" class="load-more-sentinel">
-          <n-spin v-if="loadingImages" size="small" />
-        </div>
       </n-layout-content>
     </n-layout>
 
@@ -482,14 +358,6 @@ defineExpose({ loadVisibleImages });
   padding: 0;
 }
 
-/* Infinite scroll sentinel: thin div below masonry grid */
-.load-more-sentinel {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 16px;
-  min-height: 40px;
-}
 
 .preview-container {
   display: flex;

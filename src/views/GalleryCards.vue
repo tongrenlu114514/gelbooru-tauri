@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { NSkeleton, NIcon } from 'naive-ui';
+import { FolderOutline } from '@vicons/ionicons5';
 import { MasonryWall } from '@yeger/vue-masonry-wall';
 
 export interface ImageInfo {

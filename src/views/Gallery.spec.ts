@@ -123,7 +123,7 @@ const BASE_OPTS = {
       'gallery-cards': {
         template: '<div />',
         props: ['images', 'loadingImages', 'selectedKey'],
-        expose: { setCardSrc: () => {}, getCardSrc: () => '', imageCount: 0 },
+        expose: ['setCardSrc', 'getCardSrc', 'imageCount'],
       },
     },
   },

@@ -38,6 +38,7 @@ function getCardSrc(path: string): string {
 }
 
 function setCardSrc(path: string, src: string) {
+  console.log('[GalleryCards] setCardSrc', { path, src, map_size: imageSrcMap.value.size });
   imageSrcMap.value.set(path, src);
 }
 

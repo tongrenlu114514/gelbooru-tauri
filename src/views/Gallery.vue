@@ -221,7 +221,9 @@ async function loadImagesForDirectory(dirPath: string, reset = true) {
         });
       }
       await waitForCards(5000);
+      console.log('[Gallery] after waitForCards, calling loadVisibleImages');
       loadVisibleImages();
+      console.log('[Gallery] loadVisibleImages done, selectedKey:', selectedKey.value);
       setupLoadMoreObserver();
     }
   } catch (error) {

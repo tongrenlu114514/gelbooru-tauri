@@ -1,6 +1,6 @@
 # Gelbooru Downloader - Roadmap
 
-**Last Updated:** 2026-04-17
+**Last Updated:** 2026-05-10
 
 ## Project Phases
 
@@ -92,16 +92,16 @@
 | Phase 3 | COMPLETED | 4/4 plans executed |
 | Phase 4 | COMPLETED | 2/2 plans executed |
 | Phase 5 | COMPLETED | 1/1 plan executed — Apple Photos gallery redesign |
-| Phase 6 | IN PROGRESS | 待讨论 — 瀑布流 + 面包屑导航 |
+| Phase 6 | IN PROGRESS | 2 plans — masonry + breadcrumb |
 
 ## Recent Commits
 
 ```
-d07745c feat(tags): 添加标签收藏功能
-c702cfc fix(gallery): 修复恢复页面状态时页码被重置为1的问题
-ce8fa2b refactor(gallery): 移除搜索结果缓存，仅保留页面状态恢复
-235182b feat(gallery): 页面切换后恢复搜索页面状态
-342a78c feat(gallery): 缓存结果包含搜索条件
+071cd5e docs(06): UI design contract
+7445c6b docs(phase6): UI design contract — masonry + breadcrumb
+b2b268e docs(phase6): research masonry layout + breadcrumb navigation
+914374b docs(state): record Phase 06 context session
+c48d60c docs(phase6): capture context — masonry + breadcrumb decisions
 ```
 
 ### Phase 5: 重新设计本地图库显示界面
@@ -116,6 +116,16 @@ Plans:
 
 ### Phase 6: 瀑布流布局 + 面包屑导航
 
-**Goal:** Switch image grid to true masonry waterfall layout (CSS column-count or masonry JS), replace path bar with hierarchical breadcrumb navigation showing folder hierarchy of the first visible image, enable click on breadcrumb segments to jump to any ancestor folder, keep UI clean and responsive.
+**Goal:** Switch image grid to true masonry waterfall layout using @yeger/vue-masonry-wall, replace flat path bar with hierarchical NBreadcrumb navigation, enable click on any breadcrumb segment to navigate to that folder and scroll to the first image card in viewport. Keep UI clean, responsive, and smooth.
 **Depends on:** Phase 5
-**Plans:** 0 plans — pending discuss-phase
+**Plans:** 2 plans
+
+Plans:
+- [ ] 06-01-PLAN.md — Masonry: @yeger/vue-masonry-wall + GalleryCards.vue refactor (2 tasks)
+- [ ] 06-02-PLAN.md — Breadcrumb: NBreadcrumb + path resolution + scroll orchestration (3 tasks)
+
+**Locked Decisions (D-01 to D-04):**
+- D-01: Masonry = @yeger/vue-masonry-wall (column-width=160, gap=4, row-priority)
+- D-02: Breadcrumb data = image path resolution (strip downloadPath prefix from selectedKey)
+- D-03: Breadcrumb click = navigate to folder + scroll to first image in viewport (skip if visible)
+- D-04: Folder switch scroll = scrollIntoView({ behavior: 'smooth', block: 'start' })

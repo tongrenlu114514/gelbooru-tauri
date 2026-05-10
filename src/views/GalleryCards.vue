@@ -4,7 +4,7 @@ import { NSkeleton, NIcon } from 'naive-ui';
 import { FolderOutline } from '@vicons/ionicons5';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { imageBase64Cache } from '@/utils/lruCache';
-import MasonryWall from '@yeger/vue-masonry-wall';
+import { MasonryWall } from '@yeger/vue-masonry-wall';
 
 export interface ImageInfo {
   path: string;

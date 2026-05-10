@@ -70,10 +70,11 @@ progress:
 | 260510-l7j | 瀑布流直接显示图库里的图片，不要用文件夹聚合。面包屑逻辑保持不变。按照最近的文件时间顺序加载。 | 2026-05-10 | 118801b | [260510-l7j](./quick/260510-l7j/) |
 | 260511-1ij | 缩略图瀑布流固定宽度，不固定高度 | 2026-05-10 | 871920a | [260511-1ij](./quick/260511-1ij/) |
 | 260511-1vt | 取消图片列表懒加载，图片改为懒加载 | 2026-05-10 | b4ad728 | [260511-1vt](./quick/260511-1vt/) |
+| 260511-2ab | 删除图片后不调用refresh，直接splice移除列表项 | 2026-05-10 | ac47cde | [260511-2ab](./quick/260511-2ab/) |
 
 ### Last Activity
 
-Last activity: 2026-05-10 - Completed quick task 260511-1vt: 取消图片列表懒加载，图片改为懒加载
+Last activity: 2026-05-10 - Completed quick task 260511-2ab: 删除图片后不调用refresh，直接splice移除列表项
 
 Phase 3 completed — all 4 plans executed and verified:
 

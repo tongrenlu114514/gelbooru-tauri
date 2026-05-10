@@ -184,6 +184,18 @@ function handleBreadcrumbClick(index: number) {
   enterSubdir(targetSubdir);
 }
 
+// Navigate to root (downloadPath) via root breadcrumb segment
+function goToRoot() {
+  if (!settingsStore.downloadPath) return;
+  if (selectedKey.value === settingsStore.downloadPath) return; // Already at root — no-op
+  const rootSubdir: SubDirInfo = {
+    path: settingsStore.downloadPath,
+    name: '根目录',
+    imageCount: 0,
+  };
+  enterSubdir(rootSubdir);
+}
+
 async function deleteImage(index: number) {
   const img = images.value[index];
   dialog.warning({
@@ -277,8 +289,19 @@ defineExpose({ loadVisibleImages });
     <n-layout style="height: calc(100vh - 140px)">
       <n-layout-content content-style="padding: 12px">
         <!-- Breadcrumb navigation: replaces flat .path-bar -->
-        <div v-if="breadcrumbSegments.length > 0" class="breadcrumb-bar">
+        <div v-if="breadcrumbSegments.length > 0 || selectedKey !== null" class="breadcrumb-bar">
           <n-breadcrumb>
+            <!-- Root segment: always clickable to go to downloadPath -->
+            <n-breadcrumb-item
+              clickable
+              @click="goToRoot"
+            >
+              <n-icon :size="14" color="#f0a020" style="margin-right: 4px">
+                <FolderOpenOutline />
+              </n-icon>
+              根目录
+            </n-breadcrumb-item>
+            <!-- Child segments: only clickable if not last (not current folder) -->
             <n-breadcrumb-item
               v-for="(segment, i) in breadcrumbSegments"
               :key="i"

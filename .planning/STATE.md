@@ -67,10 +67,11 @@ progress:
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260510-0is | 删除侧边栏，改为横向分割线区分的扁平文件夹列表 | 2026-05-09 | 1f48ec8 | [260510-0is-gallerysidebar](./quick/260510-0is-gallerysidebar/) |
+| 260510-l7j | 瀑布流直接显示图库里的图片，不要用文件夹聚合。面包屑逻辑保持不变。按照最近的文件时间顺序加载。 | 2026-05-10 | 118801b | [260510-l7j](./quick/260510-l7j/) |
 
 ### Last Activity
 
-Last activity: 2026-05-09 - Completed quick task 260510-0is: 删除侧边栏，改为横向分割线区分的扁平文件夹列表
+Last activity: 2026-05-10 - Completed quick task 260510-l7j: 瀑布流直接显示图库里的图片，不要用文件夹聚合。面包屑逻辑保持不变。按照最近的文件时间顺序加载。
 
 Phase 3 completed — all 4 plans executed and verified:
 

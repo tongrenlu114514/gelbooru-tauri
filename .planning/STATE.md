@@ -1,55 +1,41 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.1
-milestone_name: UI Improvements
-status: Planning next milestone
-last_updated: "2026-05-10"
-last_activity: 2026-05-10
+milestone: v1.2
+milestone_name: Viewer & Indexing
+status: Defining requirements
+last_updated: "2026-05-12"
+last_activity: 2026-05-12
 ---
 
 # Project State
 
 **Project:** Gelbooru Downloader
-**Last Updated:** 2026-05-10 after v1.0 milestone
+**Last Updated:** 2026-05-12
 
-## Current Milestone
+## Current Position
 
-**Milestone:** v1.0 COMPLETE
-
-**v1.0 Achievements:**
-
-- Phase 1-4 completed (12 plans)
-- Settings persistence to SQLite
-- 80+ unit tests (118 frontend + 102 Rust)
-- Performance optimizations (lazy loading, retry, rate limiting)
-- Schema versioning for DB migrations
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-05-12 — Milestone v1.2 started
 
 ## Phase Progress
 
 | Phase | Milestone | Status | Notes |
 |-------|-----------|--------|-------|
-| Phase 1: Foundation | v1.0 | COMPLETED | Settings persistence, path security |
-| Phase 2: Quality & Testing | v1.0 | COMPLETED | 80+ tests, Husky pre-commit |
-| Phase 3: Performance | v1.0 | COMPLETED | Lazy loading, retry, scan optimization |
-| Phase 4: Polish & Release | v1.0 | COMPLETED | Schema versioning, error consistency |
+| Phase 1-4: Foundation-Quality-Performance-Polish | v1.0 | COMPLETED | Settings persistence, 80+ tests |
 | Phase 5: Gallery Redesign | v1.1 | COMPLETED | Apple Photos aesthetic |
 | Phase 6: Masonry + Breadcrumb | v1.1 | COMPLETED | MasonryWall + NBreadcrumb |
 
 ## Next Steps
 
-**v1.1 UI** milestone complete. Next milestone to be defined.
+**v1.2 Target features:**
+- 图片查看器（UI-01, UI-02, UI-03）
+- 标签管理增强（TAG-01, TAG-02）
+- 下载管理优化（DL-01, DL-02）
+- 图库索引优化（IDX-01, IDX-02）
 
-Options:
-- Start new milestone with `/gsd-new-milestone`
-- Continue with quick tasks for bug fixes
-- Prepare for v1.0 release build
-
-## Project Reference
-
-See: .planning/PROJECT.md (updated 2026-05-10 after v1.0)
-
-**Core value:** 图片搜索和下载，带本地图库浏览
-**Current focus:** Planning next milestone
+Use `/gsd-plan-phase [N]` to start planning phases.
 
 ## Architecture Summary
 
@@ -65,13 +51,8 @@ Desktop App (Tauri 2.x)
     └── DB: SQLite via rusqlite (schema_version enabled)
 ```
 
-## Database Schema
+## Accumulated Context
 
-Tables (via rusqlite, with schema versioning):
-
-- `posts` - 图片信息缓存
-- `tags` - 标签数据
-- `favorite_tags` - 收藏标签
-- `downloads` - 下载记录
-- `settings` - 应用设置
-- `schema_version` - Migration tracking
+- Schema versioning for DB migrations
+- MasonryWall for waterfall layout
+- NBreadcrumb for navigation

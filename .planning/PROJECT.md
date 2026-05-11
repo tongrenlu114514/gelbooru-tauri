@@ -7,6 +7,19 @@
 
 Gelbooru Downloader 是一个基于 Tauri 2.x 的桌面应用程序，用于从 Gelbooru 图片站搜索和下载图片。
 
+## Current State (v1.0 MVP Shipped)
+
+**Milestone v1.0:** Complete (2026-05-10)
+- Phase 1-4 completed with 12 plans
+- Settings persistence to SQLite
+- 80+ unit tests (frontend + backend)
+- Performance optimizations (lazy loading, retry, rate limiting)
+
+**Next Milestone:** v1.1 UI (Phase 5-6)
+- Apple Photos gallery redesign
+- Masonry waterfall layout
+- Breadcrumb navigation
+
 ## Technology Stack
 
 ### Frontend
@@ -37,7 +50,7 @@ Gelbooru Downloader 是一个基于 Tauri 2.x 的桌面应用程序，用于从 
 - Tauri 多进程架构 (WebView + Rust)
 - IPC 通信 (invoke/emit)
 - Pinia 状态管理
-- SQLite 本地持久化
+- SQLite 本地持久化 (schema versioning enabled)
 
 ## External Dependencies
 
@@ -45,8 +58,37 @@ Gelbooru Downloader 是一个基于 Tauri 2.x 的桌面应用程序，用于从 
 - 浏览器 Cookie 认证
 - Tauri FS/Shell 插件
 
-## Current State
+## Requirements
 
-Phase 06 (waterfall-breadcrumb) complete — MasonryWall waterfall layout replacing CSS Grid, hierarchical NBreadcrumb navigation with smooth scroll-to-first-card, all 118 frontend tests passing.
+### Validated (v1.0)
 
-Last updated: 2026-05-10
+- Settings persistence — v1.0
+- Download task restoration — v1.0
+- Path traversal protection — v1.0
+- Testing infrastructure (Vitest + Rust) — v1.0
+- 80+ unit tests — v1.0
+- Pre-commit hooks (Husky) — v1.0
+- Image lazy loading — v1.0
+- Download retry with backoff — v1.0
+- Schema versioning — v1.0
+
+### Active (v1.1)
+
+- Apple Photos gallery redesign
+- Masonry waterfall layout
+- Breadcrumb navigation
+- Keyboard shortcut support
+
+### Out of Scope
+
+- Mobile app — web-first approach
+- Video chat — use external tools
+- Offline mode — real-time is core value
+
+## Context
+
+- Phase 06 (waterfall-breadcrumb) complete — MasonryWall waterfall layout, NBreadcrumb navigation
+- 118 frontend tests passing, 102 Rust tests passing
+- Schema version table for migration tracking
+
+Last updated: 2026-05-10 after v1.0 milestone

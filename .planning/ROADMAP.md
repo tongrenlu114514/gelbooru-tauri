@@ -1,131 +1,39 @@
 # Gelbooru Downloader - Roadmap
 
-**Last Updated:** 2026-05-10
+**Last Updated:** 2026-05-10 after v1.0 milestone
 
-## Project Phases
+## Milestones
 
-### Phase 1: Foundation & Polish
-**Goal:** Fix critical issues and establish project foundation
+- ✅ **v1.0 MVP** — Phases 1-4 (shipped 2026-05-10)
+- 🚧 **v1.1 UI** — Phases 5-6 (in progress)
+- 📋 **v2.0** — Future (planned)
 
-| # | Task | Priority | Files |
-|---|------|----------|-------|
-| 1.1 | 设置持久化到数据库 | HIGH | settings.ts, db module |
-| 1.2 | 下载任务状态持久化 | HIGH | download.rs, download store |
-| 1.3 | 路径清理和安全验证 | HIGH | gallery.rs |
-| 1.4 | 移除硬编码路径 | HIGH | gallery.rs, http.rs, settings.ts |
+## Phases
 
-**Success Criteria:**
-- 设置重启后可恢复
-- 下载任务重启后可继续
-- 无硬编码路径
-- 路径操作安全
+<details>
+<summary>✅ v1.0 MVP (Phases 1-4) — SHIPPED 2026-05-10</summary>
 
-### Phase 2: Quality & Testing
-**Goal:** Add testing and improve code quality
+- [x] Phase 1: Foundation & Polish (1/1 plan) — completed 2026-04-14
+- [x] Phase 2: Quality & Testing (5/5 plans) — completed 2026-04-15
+- [x] Phase 3: Performance & Reliability (4/4 plans) — completed 2026-04-17
+- [x] Phase 4: Polish & Release (2/2 plans) — completed 2026-04-17
 
-| # | Task | Priority | Files |
-|---|------|----------|-------|
-| 2.1 | 配置测试框架 (Vitest + Rust tests) | MEDIUM | package.json, Cargo.toml |
-| 2.2 | 单元测试 (前端) | MEDIUM | src/**/*.spec.ts |
-| 2.3 | 单元测试 (后端) | MEDIUM | src-tauri/src/**/*.rs |
-| 2.4 | 配置 ESLint/Prettier | MEDIUM | eslint.config.js, prettier.config.js |
+**Archived:** `.planning/milestones/v1.0-ROADMAP.md`
 
-**Success Criteria:**
-- 测试框架就绪
-- 核心功能有测试覆盖
-- 代码风格统一
+</details>
 
-**Plans:**
-5/5 plans executed
-- [x] 02-02-PLAN.md - Frontend gallery store page state tests
-- [x] 02-03-PLAN.md - Backend database CRUD tests with tempfile
-- [x] 02-04-PLAN.md - Backend scraper HTML parsing tests
-- [x] 02-05-PLAN.md - Husky pre-commit hook setup
+### 🚧 v1.1 UI (Phase 5-6)
 
-### Phase 3: Performance & Reliability
-**Goal:** Improve performance and add reliability features
+- [ ] Phase 5: 重新设计本地图库显示界面 (1/1 plan) — Apple Photos redesign
+- [ ] Phase 6: 瀑布流布局 + 面包屑导航 (2/2 plans) — Masonry + breadcrumb
 
-| # | Task | Priority | Files |
-|---|------|----------|-------|
-| 3.1 | imageCache 内存泄漏修复 | HIGH | Gallery.vue |
-| 3.2 | 下载重试机制 | MEDIUM | download.rs |
-| 3.3 | 大目录扫描优化 | MEDIUM | gallery.rs |
-| 3.4 | 添加请求限流 | LOW | http.rs |
+## Progress
 
-**Plans:**
-- [x] 03-01-PLAN.md - imageCache lazy loading via IntersectionObserver
-- [x] 03-02-PLAN.md - Download retry with exponential backoff (3 retries, 1s/2s/4s)
-- [x] 03-03-PLAN.md - Async directory scan with tokio::fs + Semaphore (max 10 handles)
-- [x] 03-04-PLAN.md - Global HTTP rate limiting (500ms gap via RwLock<Instant>)
-
-**Success Criteria:**
-- 无内存泄漏
-- 下载失败可重试
-- 大目录操作流畅
-
-### Phase 4: Polish & Release
-**Goal:** Final polish and release
-
-| # | Task | Priority | Files |
-|---|------|----------|-------|
-| 4.1 | 数据库 schema 版本管理 | MEDIUM | db/mod.rs |
-| 4.2 | 错误处理统一化 | MEDIUM | 全局 |
-| 4.3 | 文档完善 | LOW | README.md |
-| 4.4 | 发布准备 | HIGH | tauri.conf.json |
-
-**Success Criteria:**
-- Schema 版本可追踪
-- 错误信息统一友好
-- 文档完整
-- 可发布版本
-
-**Plans:**
-- [x] 04-01-PLAN.md -- Schema version table + migrations + error consistency verification
-- [x] 04-02-PLAN.md -- Basic README.md + tauri.conf.json production verification
-
-## State
-
-| Phase | Status | Notes |
-|-------|--------|-------|
-| Phase 1 | COMPLETED | 4/4 tasks done |
-| Phase 2 | COMPLETED | 5/5 plans done |
-| Phase 3 | COMPLETED | 4/4 plans executed |
-| Phase 4 | COMPLETED | 2/2 plans executed |
-| Phase 5 | COMPLETED | 1/1 plan executed — Apple Photos gallery redesign |
-| Phase 6 | IN PROGRESS | 2 plans — masonry + breadcrumb |
-
-## Recent Commits
-
-```
-071cd5e docs(06): UI design contract
-7445c6b docs(phase6): UI design contract — masonry + breadcrumb
-b2b268e docs(phase6): research masonry layout + breadcrumb navigation
-914374b docs(state): record Phase 06 context session
-c48d60c docs(phase6): capture context — masonry + breadcrumb decisions
-```
-
-### Phase 5: 重新设计本地图库显示界面
-
-**Goal:** Redesign Gallery.vue with Apple Photos-inspired aesthetic — collapsible 240px sidebar, uniform 160px card grid with 4px gap, white 4px-radius cards with hover gradient + filename, NSkeleton loading, unified folder/image cards, NModal preview with keyboard navigation.
-**Requirements**: D-01 through D-11 (from 05-CONTEXT.md)
-**Depends on:** Phase 4
-**Plans:** 1 plan
-
-Plans:
-- [x] 05-01-PLAN.md — Apple Photos gallery redesign (3 tasks: sidebar + cards + integration)
-
-### Phase 6: 瀑布流布局 + 面包屑导航
-
-**Goal:** Switch image grid to true masonry waterfall layout using @yeger/vue-masonry-wall, replace flat path bar with hierarchical NBreadcrumb navigation, enable click on any breadcrumb segment to navigate to that folder and scroll to the first image card in viewport. Keep UI clean, responsive, and smooth.
-**Depends on:** Phase 5
-**Plans:** 2 plans
-
-Plans:
-- [x] 06-01-PLAN.md — Masonry: @yeger/vue-masonry-wall + GalleryCards.vue refactor (2 tasks)
-- [x] 06-02-PLAN.md — Breadcrumb: NBreadcrumb + path resolution + scroll orchestration (3 tasks)
-
-**Locked Decisions (D-01 to D-04):**
-- D-01: Masonry = @yeger/vue-masonry-wall (column-width=160, gap=4, row-priority)
-- D-02: Breadcrumb data = image path resolution (strip downloadPath prefix from selectedKey)
-- D-03: Breadcrumb click = navigate to folder + scroll to first image in viewport (skip if visible)
-- D-04: Folder switch scroll = scrollIntoView({ behavior: 'smooth', block: 'start' })
+| Phase | Milestone | Plans Complete | Status |
+|-------|-----------|---------------|--------|
+| 1. Foundation | v1.0 | 1/1 | Complete |
+| 2. Quality & Testing | v1.0 | 5/5 | Complete |
+| 3. Performance & Reliability | v1.0 | 4/4 | Complete |
+| 4. Polish & Release | v1.0 | 2/2 | Complete |
+| 5. Gallery Redesign | v1.1 | 1/1 | Complete |
+| 6. Masonry + Breadcrumb | v1.1 | 2/2 | Complete |

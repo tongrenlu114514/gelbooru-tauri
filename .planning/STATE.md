@@ -2,22 +2,22 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Viewer & Indexing
-status: Defining requirements
-last_updated: "2026-05-12"
-last_activity: 2026-05-12
+status: Roadmap defined
+last_updated: "2026-05-13"
+last_activity: 2026-05-13
 ---
 
 # Project State
 
 **Project:** Gelbooru Downloader
-**Last Updated:** 2026-05-12
+**Last Updated:** 2026-05-13
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-05-12 — Milestone v1.2 started
+Phase: Roadmap defined (Phase 7-10)
+Plan: Ready to plan Phase 7
+Status: Roadmap defined for v1.2
+Last activity: 2026-05-13 — v1.2 roadmap created
 
 ## Phase Progress
 
@@ -26,16 +26,20 @@ Last activity: 2026-05-12 — Milestone v1.2 started
 | Phase 1-4: Foundation-Quality-Performance-Polish | v1.0 | COMPLETED | Settings persistence, 80+ tests |
 | Phase 5: Gallery Redesign | v1.1 | COMPLETED | Apple Photos aesthetic |
 | Phase 6: Masonry + Breadcrumb | v1.1 | COMPLETED | MasonryWall + NBreadcrumb |
+| Phase 7: Image Viewer Enhancement | v1.2 | Not started | Fullscreen viewer with zoom/pan |
+| Phase 8: Tag Autocomplete | v1.2 | Not started | Search tag autocomplete |
+| Phase 9: Download Retry UI | v1.2 | Not started | Retry button and pause/resume |
+| Phase 10: Gallery Indexing | v1.2 | Not started | SQLite index and thumbnails |
 
 ## Next Steps
 
 **v1.2 Target features:**
-- 图片查看器（UI-01, UI-02, UI-03）
-- 标签管理增强（TAG-01, TAG-02）
-- 下载管理优化（DL-01, DL-02）
-- 图库索引优化（IDX-01, IDX-02）
+- Phase 7: Image Viewer (UI-01 to UI-06) - fullscreen, zoom/pan, keyboard nav, filmstrip
+- Phase 8: Tag Autocomplete (TAG-01, TAG-02) - autocomplete dropdown, recommendations
+- Phase 9: Download Retry UI (DL-01, DL-02) - retry button, pause/resume
+- Phase 10: Gallery Indexing (IDX-01 to IDX-04) - SQLite index, thumbnail generation
 
-Use `/gsd-plan-phase [N]` to start planning phases.
+Use `/gsd-plan-phase 7` to start planning Phase 7.
 
 ## Architecture Summary
 
@@ -56,3 +60,5 @@ Desktop App (Tauri 2.x)
 - Schema versioning for DB migrations
 - MasonryWall for waterfall layout
 - NBreadcrumb for navigation
+- Image crate for thumbnail generation (v0.25.10)
+- NAutoComplete from naive-ui for tag autocomplete

@@ -31,7 +31,10 @@
 4. User can navigate between images using left/right buttons or keyboard arrows
 5. User can close viewer with Escape key
 6. User can view filmstrip showing neighboring images for quick navigation
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 07-01-PLAN.md — ImageViewer.vue with zoom/pan/keyboard
+- [ ] 07-02-PLAN.md — Filmstrip.vue component
 **UI hint**: yes
 
 ### Phase 8: Tag Autocomplete
@@ -77,7 +80,7 @@
 | 4. Polish & Release | v1.0 | 2/2 | Complete |
 | 5. Gallery Redesign | v1.1 | 1/1 | Complete |
 | 6. Masonry + Breadcrumb | v1.1 | 2/2 | Complete |
-| 7. Image Viewer Enhancement | v1.2 | 0/1 | Not started |
+| 7. Image Viewer Enhancement | v1.2 | 0/2 | Not started |
 | 8. Tag Autocomplete | v1.2 | 0/1 | Not started |
 | 9. Download Retry UI | v1.2 | 0/1 | Not started |
 | 10. Gallery Indexing | v1.2 | 0/1 | Not started |

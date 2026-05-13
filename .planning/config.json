@@ -5,7 +5,8 @@
   "workflow": {
     "autoResearch": false,
     "requireApproval": true,
-    "autoCommit": true
+    "autoCommit": true,
+    "_auto_chain_active": false
   },
   "phases": [],
   "branches": {

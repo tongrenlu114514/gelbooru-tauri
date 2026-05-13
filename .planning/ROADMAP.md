@@ -33,8 +33,8 @@
 6. User can view filmstrip showing neighboring images for quick navigation
 **Plans**: 2 plans
 Plans:
-- [ ] 07-01-PLAN.md — ImageViewer.vue with zoom/pan/keyboard
-- [ ] 07-02-PLAN.md — Filmstrip.vue component
+- [x] 07-01-PLAN.md — ImageViewer.vue with zoom/pan/keyboard
+- [x] 07-02-PLAN.md — Filmstrip.vue component
 **UI hint**: yes
 
 ### Phase 8: Tag Autocomplete

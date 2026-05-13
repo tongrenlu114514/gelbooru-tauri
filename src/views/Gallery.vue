@@ -3,7 +3,6 @@ import { computed, ref, onMounted, onBeforeMount, onBeforeUnmount, onUnmounted, 
 import {
   NButton,
   NSpace,
-  NText,
   NIcon,
   NLayout,
   NLayoutContent,
@@ -15,7 +14,6 @@ import {
 import {
   RefreshOutline,
   FolderOpenOutline,
-  TrashOutline,
 } from '@vicons/ionicons5';
 import { invoke } from '@tauri-apps/api/core';
 import GalleryCards from './GalleryCards.vue';
@@ -199,7 +197,6 @@ onBeforeMount(() => {
 
 onMounted(() => {
   loadTree();
-  window.addEventListener('keydown', handleKeydown);
 });
 
 onBeforeUnmount(() => {

@@ -8,6 +8,7 @@ import {
   ExpandOutline,
 } from '@vicons/ionicons5';
 import { convertFileSrc } from '@tauri-apps/api/core';
+import Filmstrip from './Filmstrip.vue';
 
 // ImageInfo interface matching GalleryCards.vue
 export interface ImageInfo {
@@ -67,6 +68,11 @@ function nextImage() {
     currentIndex.value++;
     resetZoom();
   }
+}
+
+function goToImage(index: number) {
+  currentIndex.value = index;
+  resetZoom();
 }
 
 function zoomIn() {
@@ -267,6 +273,13 @@ onBeforeUnmount(() => {
         <span>+/-/0: Zoom In/Out/Reset</span>
         <span>Esc: Close</span>
       </div>
+
+      <!-- Filmstrip navigation -->
+      <Filmstrip
+        :images="props.images"
+        :current-index="currentIndex"
+        @select="goToImage"
+      />
     </div>
   </Teleport>
 </template>

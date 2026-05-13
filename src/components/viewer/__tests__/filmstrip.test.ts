@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils';
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import Filmstrip from '../Filmstrip.vue';
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -15,17 +15,6 @@ function makeGallery(count: number) {
 }
 
 describe('Filmstrip', () => {
-  let mockScrollTo: ReturnType<typeof vi.fn>;
-
-  beforeEach(() => {
-    mockScrollTo = vi.fn();
-    HTMLDivElement.prototype.scrollTo = mockScrollTo;
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
   it('renders 9 thumbnails when images length >= 9', () => {
     const images = makeGallery(20);
     const wrapper = mount(Filmstrip, {

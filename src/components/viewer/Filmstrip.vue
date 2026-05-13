@@ -59,7 +59,9 @@ watch(
     const trackRect = track.getBoundingClientRect();
     const elRect = activeEl.getBoundingClientRect();
     const scrollTarget = activeEl.offsetLeft - trackRect.width / 2 + elRect.width / 2;
-    track.scrollTo({ left: Math.max(0, scrollTarget), behavior: 'smooth' });
+    const clampedLeft = Math.max(0, scrollTarget);
+    // Use scrollLeft assignment for broad compatibility (jsdom, browsers)
+    track.scrollLeft = clampedLeft;
   },
   { immediate: true }
 );

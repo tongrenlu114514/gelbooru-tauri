@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeMount, onBeforeUnmount, onUnmounted, watch, nextTick } from 'vue';
+import { computed, ref, onMounted, onBeforeMount, onBeforeUnmount, onUnmounted, watch, nextTick } from 'vue';
 import {
   NButton,
   NSpace,

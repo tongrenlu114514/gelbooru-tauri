@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeMount, onBeforeUnmount, onUnmounted, computed, watch } from 'vue';
+import { ref, onMounted, onBeforeMount, onBeforeUnmount, onUnmounted, watch, nextTick } from 'vue';
 import {
   NButton,
   NSpace,
   NText,
   NIcon,
-  NModal,
   NLayout,
   NLayoutContent,
   NBreadcrumb,
@@ -17,13 +16,11 @@ import {
   RefreshOutline,
   FolderOpenOutline,
   TrashOutline,
-  ChevronBackOutline,
-  ChevronForwardOutline,
 } from '@vicons/ionicons5';
 import { invoke } from '@tauri-apps/api/core';
-import { convertFileSrc } from '@tauri-apps/api/core';
 import GalleryCards from './GalleryCards.vue';
 import type { ImageInfo, SubDirInfo } from './GalleryCards.vue';
+import ImageViewer from '@/components/viewer/ImageViewer.vue';
 import { useSettingsStore } from '@/stores/settings';
 
 const message = useMessage();
@@ -42,23 +39,14 @@ function applyScrollTop(position: number) {
   });
 }
 
-// Preview modal: use convertFileSrc for full-size image
-function getPreviewSrc(path: string): string {
-  return convertFileSrc(path.replace(/\\/g, '/'));
-}
-
-// Pagination state
-const limit = ref(10000);
-
 const selectedKey = ref<string | null>(null);
 const images = ref<ImageInfo[]>([]);
 const loadingTree = ref(false);
 const loadingImages = ref(false);
 
+// ImageViewer state (replaces NModal preview)
 const showPreview = ref(false);
 const previewIndex = ref(0);
-
-const currentImage = computed(() => images.value[previewIndex.value]);
 
 // Breadcrumb segments: path relative to downloadPath, split into segments
 const breadcrumbSegments = computed(() => {
@@ -86,21 +74,6 @@ function goToRoot() {
 function openPreview(index: number) {
   previewIndex.value = index;
   showPreview.value = true;
-}
-
-function prevImage() {
-  if (previewIndex.value > 0) previewIndex.value--;
-}
-
-function nextImage() {
-  if (previewIndex.value < images.value.length - 1) previewIndex.value++;
-}
-
-function handleKeydown(e: KeyboardEvent) {
-  if (!showPreview.value) return;
-  if (e.key === 'ArrowLeft') prevImage();
-  if (e.key === 'ArrowRight') nextImage();
-  if (e.key === 'Escape') showPreview.value = false;
 }
 
 async function loadImagesForDirectory(dirPath: string) {
@@ -174,10 +147,14 @@ async function deleteImage(index: number) {
       invoke('delete_image', { path: img.path })
         .then(() => {
           images.value.splice(index, 1);
-          if (showPreview.value && previewIndex.value >= images.value.length) {
-            previewIndex.value = Math.max(0, images.value.length - 1);
+          // Adjust previewIndex if needed
+          if (index < previewIndex.value) {
+            previewIndex.value--;
+          } else if (previewIndex.value >= images.value.length && images.value.length > 0) {
+            previewIndex.value = images.value.length - 1;
+          } else if (images.value.length === 0) {
+            showPreview.value = false;
           }
-          if (images.value.length === 0) showPreview.value = false;
           message.success('删除成功');
         })
         .catch((error: unknown) => {
@@ -293,54 +270,13 @@ defineExpose({});
       </n-layout-content>
     </n-layout>
 
-    <!-- D-08: Preview modal with ArrowLeft/Right keyboard navigation -->
-    <n-modal
-      v-model:show="showPreview"
-      preset="card"
-      style="width: auto; max-width: 90vw; max-height: 90vh"
-    >
-      <template #header>
-        <n-text>{{ currentImage?.name }}</n-text>
-      </template>
-      <div class="preview-container">
-        <img
-          v-if="currentImage"
-          :src="getPreviewSrc(currentImage.path)"
-          style="max-width: 80vw; max-height: 70vh; object-fit: contain"
-        />
-        <div class="preview-nav">
-          <n-button quaternary circle :disabled="previewIndex === 0" @click="prevImage">
-            <template #icon>
-              <n-icon :size="24"><ChevronBackOutline /></n-icon>
-            </template>
-          </n-button>
-          <n-text depth="3">{{ previewIndex + 1 }} / {{ images.length }}</n-text>
-          <n-button
-            quaternary
-            circle
-            :disabled="previewIndex === images.length - 1"
-            @click="nextImage"
-          >
-            <template #icon>
-              <n-icon :size="24"><ChevronForwardOutline /></n-icon>
-            </template>
-          </n-button>
-          <n-button
-            type="error"
-            quaternary
-            @click="
-              showPreview = false;
-              deleteImage(previewIndex);
-            "
-          >
-            <template #icon>
-              <n-icon><TrashOutline /></n-icon>
-            </template>
-            删除
-          </n-button>
-        </div>
-      </div>
-    </n-modal>
+    <!-- ImageViewer: replaces NModal with zoom/pan/keyboard support -->
+    <ImageViewer
+      v-model:visible="showPreview"
+      :images="images"
+      :initial-index="previewIndex"
+      @delete="deleteImage"
+    />
   </div>
 </template>
 
@@ -355,12 +291,5 @@ defineExpose({});
   align-items: center;
   margin-bottom: 8px;
   padding: 0;
-}
-
-
-.preview-container {
-  display: flex;
-  align-items: center;
-  gap: 16px;
 }
 </style>

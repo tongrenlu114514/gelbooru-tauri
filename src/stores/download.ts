@@ -105,6 +105,14 @@ export const useDownloadStore = defineStore('download', () => {
   const downloading = computed(() => tasks.value.filter((t) => t.status === 'downloading'));
   const completed = computed(() => tasks.value.filter((t) => t.status === 'completed'));
   const failed = computed(() => tasks.value.filter((t) => t.status === 'failed'));
+  const showFailedOnly = ref(false);
+
+  const filteredTasks = computed(() => {
+    if (showFailedOnly.value) {
+      return tasks.value.filter((t) => t.status === 'failed');
+    }
+    return [...tasks.value].sort((a, b) => b.id - a.id);
+  });
 
   // 初始化事件监听
   async function initListeners() {
@@ -239,6 +247,15 @@ export const useDownloadStore = defineStore('download', () => {
     }
   }
 
+  // 重试失败下载：立即重置进度，然后调用 startDownload
+  async function retryDownload(id: number) {
+    const index = tasks.value.findIndex((t) => t.id === id);
+    if (index !== -1) {
+      tasks.value[index] = { ...tasks.value[index], progress: 0, error: undefined };
+    }
+    await startDownload(id);
+  }
+
   // 获取所有任务
   async function fetchTasks() {
     try {
@@ -279,6 +296,8 @@ export const useDownloadStore = defineStore('download', () => {
     downloading,
     completed,
     failed,
+    showFailedOnly,
+    filteredTasks,
     init,
     initListeners,
     addTask,
@@ -292,5 +311,6 @@ export const useDownloadStore = defineStore('download', () => {
     startAllPending,
     pauseAllDownloading,
     openFile,
+    retryDownload,
   };
 });

@@ -27,6 +27,7 @@ url = "2"
 lazy_static = "1.5"
 base64 = "0.22"
 walkdir = "2"
+image = "0.25"
 
 [dev-dependencies]
 rstest = "0.23"

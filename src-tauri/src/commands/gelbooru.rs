@@ -103,3 +103,25 @@ pub async fn get_image_base64(url: String) -> Result<String, String> {
     
     Ok(format!("data:{};base64,{}", content_type, base64))
 }
+
+#[tauri::command]
+pub async fn search_tags(query: String, limit: u32) -> Result<Vec<GelbooruTag>, String> {
+    let client = HTTP_CLIENT.read().await;
+    let encoded_query = urlencoding::encode(&query);
+    let url = format!(
+        "{}/index.php?page=tag&s=api&q={}&limit={}",
+        crate::services::BASE_URL, encoded_query, limit
+    );
+
+    let html = client.get(&url).await
+        .map_err(|e| format!("Failed to fetch tags: {}", e))?;
+
+    let tags = SCRAPER.parse_tag_autocomplete(&html);
+    Ok(tags)
+}
+
+mod urlencoding {
+    pub fn encode(s: &str) -> String {
+        url::form_urlencoded::byte_serialize(s.as_bytes()).collect()
+    }
+}

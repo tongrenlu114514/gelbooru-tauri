@@ -1,7 +1,7 @@
 use crate::models::{GelbooruPost, GelbooruPostStatistics, GelbooruTag};
 use scraper::{Html, Selector};
 
-const BASE_URL: &str = "https://gelbooru.com";
+pub(crate) const BASE_URL: &str = "https://gelbooru.com";
 const PAGE_SIZE: u32 = 42;
 
 const INCLUDE_TAGS: &[&str] = &["highres"];
@@ -190,6 +190,36 @@ impl GelbooruScraper {
         }
 
         tags
+    }
+
+    /// Parse tag autocomplete response (JSON format from tag API)
+    pub fn parse_tag_autocomplete(&self, json: &str) -> Vec<GelbooruTag> {
+        // Gelbooru tag API returns: [{ "label": "tag_name", "value": "tag_name", "count": 123 }, ...]
+        match serde_json::from_str::<serde_json::Value>(json) {
+            Ok(arr) if arr.is_array() => {
+                arr.as_array()
+                    .unwrap()
+                    .iter()
+                    .filter_map(|item| {
+                        let label = item.get("label")
+                            .or_else(|| item.get("value"))
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())?;
+                        let count = item.get("count")
+                            .and_then(|v| v.as_u64())
+                            .unwrap_or(0) as u32;
+                        // Infer tag type from label patterns (artist: prefix, copyright: suffix, etc.)
+                        let tag_type = if label.contains(':') {
+                            label.split(':').next().unwrap_or("general").to_string()
+                        } else {
+                            "general".to_string()
+                        };
+                        Some(GelbooruTag::new(label, tag_type, count))
+                    })
+                    .collect()
+            }
+            _ => Vec::new(),
+        }
     }
 
     fn parse_post_list(&self, document: &Html) -> Vec<GelbooruPost> {

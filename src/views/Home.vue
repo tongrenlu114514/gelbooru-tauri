@@ -18,6 +18,7 @@ import { ChevronBack, ChevronForward, Close, HeartOutline } from '@vicons/ionico
 import { useGalleryStore } from '@/stores/gallery';
 import { useDownloadStore } from '@/stores/download';
 import { useFavoriteTagsStore } from '@/stores/favoriteTags';
+import TagAutocompleteInput from '@/components/search/TagAutocompleteInput.vue';
 import { invoke } from '@tauri-apps/api/core';
 import type { GelbooruPost, GelbooruTag } from '@/types';
 
@@ -280,6 +281,37 @@ async function searchPosts(resetPage = false) {
   }
 }
 
+async function handleAutocompleteSearch(tags: string[]) {
+  if (!tags.length) return;
+  galleryStore.currentPage = 1;
+
+  const tagsWithRating = [...tags];
+  if (selectedRating.value) {
+    tagsWithRating.push(selectedRating.value);
+  }
+
+  loading.value = true;
+  try {
+    const result = await invoke<{
+      postList: GelbooruPost[];
+      tagList: GelbooruTag[];
+      totalPages: number;
+    }>('search_posts', {
+      tags: tagsWithRating,
+      page: galleryStore.currentPage,
+    });
+    galleryStore.setPosts(result.postList);
+    galleryStore.setTags(result.tagList);
+    galleryStore.setTotalPages(result.totalPages);
+    galleryStore.setSearchTags(tagsWithRating);
+  } catch (error) {
+    console.error('Search failed:', error);
+  } finally {
+    loading.value = false;
+    scrollToTop();
+  }
+}
+
 // 滚动到顶部
 function scrollToTop() {
   nextTick(() => {
@@ -442,7 +474,7 @@ function handleKeydown(e: KeyboardEvent) {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   // 加载收藏标签
   favoriteTagsStore.loadTags();
 
@@ -486,14 +518,17 @@ onBeforeRouteLeave(() => {
 });
 
 watch(
-  [selectedTags, selectedRating],
+  [selectedRating],
   () => {
     if (isRestoring.value || loading.value) {
       return;
     }
-    searchPosts(true);
-  },
-  { deep: true, flush: 'sync' }
+    // Rating change triggers search with current selectedTags
+    const tags = [...selectedTags.value];
+    if (tags.length > 0) {
+      handleAutocompleteSearch(tags);
+    }
+  }
 );
 </script>
 
@@ -517,24 +552,12 @@ watch(
     <!-- Search Bar -->
     <n-space vertical size="large">
       <n-space>
-        <n-input
-          v-model:value="searchInput"
-          placeholder="输入标签搜索..."
-          style="width: 400px"
-          @keyup.enter="
-            addTag(searchInput);
-            searchInput = '';
-          "
+        <TagAutocompleteInput
+          v-model="selectedTags"
+          @search="handleAutocompleteSearch"
         />
         <n-select v-model:value="selectedRating" :options="ratingOptions" style="width: 150px" />
         <n-button type="primary" @click="searchPosts(true)">搜索</n-button>
-      </n-space>
-
-      <!-- Selected Tags -->
-      <n-space v-if="selectedTags.length > 0">
-        <n-tag v-for="tag in selectedTags" :key="tag" closable @close="removeTag(tag)">
-          {{ tag }}
-        </n-tag>
       </n-space>
     </n-space>
 

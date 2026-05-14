@@ -16,7 +16,7 @@
 - [ ] **Phase 7: Image Viewer Enhancement** — Fullscreen viewer with zoom/pan (UI-01 to UI-06)
 - [ ] **Phase 8: Tag Autocomplete** — Search tag autocomplete and recommendations (TAG-01, TAG-02)
 - [x] **Phase 9: Download Retry UI** — Retry button and pause/resume controls (DL-01, DL-02) (completed 2026-05-14)
-- [ ] **Phase 10: Gallery Indexing** — SQLite index and thumbnail generation (IDX-01 to IDX-04)
+- [x] **Phase 10: Gallery Indexing** — SQLite index and thumbnail generation (IDX-01 to IDX-04) (completed 2026-05-14)
 
 ## Phase Details
 
@@ -74,7 +74,7 @@ Plans:
 4. App generates thumbnails in background for faster subsequent loading
 **Plans**: 1 plan
 Plans:
-- [ ] 10-01-PLAN.md — Backend: SQLite schema + thumbnail generation + Tauri commands
+- [x] 10-01-PLAN.md — Backend: SQLite schema + thumbnail generation + Tauri commands
 
 ## Progress
 
@@ -89,4 +89,4 @@ Plans:
 | 7. Image Viewer Enhancement | v1.2 | 2/2 | Complete |
 | 8. Tag Autocomplete | v1.2 | 0/1 | Not started |
 | 9. Download Retry UI | 1/1 | Complete    | 2026-05-14 |
-| 10. Gallery Indexing | v1.2 | 0/1 | Not started |
+| 10. Gallery Indexing | 1/1 | Complete    | 2026-05-14 |

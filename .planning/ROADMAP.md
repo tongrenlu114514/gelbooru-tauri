@@ -45,7 +45,9 @@ Plans:
 1. User sees tag autocomplete dropdown while typing in search tag input
 2. User can select suggestion with Enter key or mouse click
 3. User receives tag recommendations based on search history
-**Plans**: TBD
+**Plans**: 1 plan
+Plans:
+- [ ] 08-01-PLAN.md — TagAutocompleteInput + SearchHistoryStore
 **UI hint**: yes
 
 ### Phase 9: Download Retry UI
@@ -80,7 +82,7 @@ Plans:
 | 4. Polish & Release | v1.0 | 2/2 | Complete |
 | 5. Gallery Redesign | v1.1 | 1/1 | Complete |
 | 6. Masonry + Breadcrumb | v1.1 | 2/2 | Complete |
-| 7. Image Viewer Enhancement | v1.2 | 0/2 | Not started |
+| 7. Image Viewer Enhancement | v1.2 | 2/2 | Complete |
 | 8. Tag Autocomplete | v1.2 | 0/1 | Not started |
 | 9. Download Retry UI | v1.2 | 0/1 | Not started |
 | 10. Gallery Indexing | v1.2 | 0/1 | Not started |

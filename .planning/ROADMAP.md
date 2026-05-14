@@ -72,7 +72,9 @@ Plans:
 2. App stores generated thumbnails in dedicated cache directory
 3. App generates thumbnails on-demand when viewing gallery for uncached images
 4. App generates thumbnails in background for faster subsequent loading
-**Plans**: TBD
+**Plans**: 1 plan
+Plans:
+- [ ] 10-01-PLAN.md — Backend: SQLite schema + thumbnail generation + Tauri commands
 
 ## Progress
 

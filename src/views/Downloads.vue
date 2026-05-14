@@ -1,16 +1,11 @@
 <script setup lang="ts">
-import { h, onMounted, computed, type VNode } from 'vue';
-import { NDataTable, NButton, NSpace, NProgress, NTag, NEmpty, NPopconfirm } from 'naive-ui';
+import { h, onMounted, type VNode } from 'vue';
+import { NDataTable, NButton, NSpace, NProgress, NTag, NEmpty, NPopconfirm, NTooltip } from 'naive-ui';
 import { useDownloadStore } from '@/stores/download';
 import type { DataTableColumns } from 'naive-ui';
 import type { DownloadTask } from '@/stores/download';
 
 const downloadStore = useDownloadStore();
-
-// 按 id 倒序排列的任务列表
-const sortedTasks = computed(() => {
-  return [...downloadStore.tasks].sort((a, b) => b.id - a.id);
-});
 
 const columns: DataTableColumns<DownloadTask> = [
   {
@@ -78,6 +73,19 @@ const columns: DataTableColumns<DownloadTask> = [
     },
   },
   {
+    title: '错误',
+    key: 'error',
+    width: 200,
+    render(row) {
+      if (row.status !== 'failed' || !row.error) return null;
+      const shortMsg = row.error.length > 80 ? row.error.slice(0, 80) + '...' : row.error;
+      return h(NTooltip, { style: 'max-width: 400px' }, {
+        trigger: () => h('span', { style: 'color: #d03050; font-size: 12px; cursor: pointer' }, shortMsg),
+        default: () => row.error,
+      });
+    },
+  },
+  {
     title: '操作',
     key: 'actions',
     width: 180,
@@ -118,7 +126,7 @@ const columns: DataTableColumns<DownloadTask> = [
         buttons.push(
           h(
             NButton,
-            { size: 'small', type: 'primary', onClick: () => downloadStore.startDownload(row.id) },
+            { size: 'small', type: 'warning', onClick: () => downloadStore.retryDownload(row.id) },
             { default: () => '重试' }
           )
         );
@@ -193,21 +201,35 @@ onMounted(() => {
     </n-space>
 
     <div class="stats-bar" v-if="downloadStore.tasks.length > 0">
-      <n-space size="large">
+      <n-space size="large" :wrap="false">
         <span>总计: {{ downloadStore.tasks.length }}</span>
         <span style="color: #18a058">已完成: {{ downloadStore.completed.length }}</span>
         <span style="color: #2080f0">下载中: {{ downloadStore.downloading.length }}</span>
         <span style="color: #f0a020">等待中: {{ downloadStore.queue.length }}</span>
-        <span style="color: #d03050">失败: {{ downloadStore.failed.length }}</span>
+        <n-button
+          text
+          :style="{ color: downloadStore.showFailedOnly ? '#fff' : '#d03050', background: downloadStore.showFailedOnly ? '#d03050' : 'transparent', borderRadius: '4px', padding: '2px 8px' }"
+          @click="downloadStore.showFailedOnly = !downloadStore.showFailedOnly"
+        >
+          失败: {{ downloadStore.failed.length }}
+        </n-button>
+        <n-button
+          v-if="downloadStore.showFailedOnly"
+          size="small"
+          @click="downloadStore.showFailedOnly = false"
+        >
+          清除筛选
+        </n-button>
       </n-space>
     </div>
 
     <n-data-table
       v-if="downloadStore.tasks.length > 0"
       :columns="columns"
-      :data="sortedTasks"
+      :data="downloadStore.filteredTasks"
       :bordered="false"
       :row-key="(row: DownloadTask) => row.id"
+      :row-class-name="(row: DownloadTask) => row.status === 'failed' ? 'failed-row' : ''"
     />
     <n-empty v-else description="暂无下载任务" style="margin-top: 100px" />
   </div>
@@ -224,5 +246,9 @@ onMounted(() => {
   border-radius: 8px;
   margin-bottom: 16px;
   font-size: 13px;
+}
+
+:deep(.failed-row) {
+  background: rgba(208, 48, 80, 0.08);
 }
 </style>

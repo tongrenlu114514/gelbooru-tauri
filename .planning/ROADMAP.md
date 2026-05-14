@@ -58,7 +58,9 @@ Plans:
 1. User can pause active download tasks and resume paused tasks
 2. User can retry failed download tasks with one click
 3. User sees error message displayed for failed downloads
-**Plans**: TBD
+**Plans**: 1 plan
+Plans:
+- [ ] 09-01-PLAN.md — Download Retry UI with retry action, error display, pause/resume, failed filter
 **UI hint**: yes
 
 ### Phase 10: Gallery Indexing

@@ -91,8 +91,10 @@ Gelbooru Downloader 是一个基于 Tauri 2.x 的桌面应用程序，用于从 
 - TAG-02: 标签推荐
 - DL-01: 暂停/恢复下载
 - DL-02: 下载重试机制
-- IDX-01: 图库索引缓存
-- IDX-02: 缩略图预生成
+- IDX-01: 图库索引缓存 ✅ Phase 10
+- IDX-02: 缩略图预生成 ✅ Phase 10
+- IDX-03: 按需缩略图生成 ✅ Phase 10
+- IDX-04: 后台缩略图队列 ✅ Phase 10
 
 ## Evolution
 
@@ -124,4 +126,4 @@ This document evolves at phase transitions and milestone boundaries.
 - Schema version table for migration tracking
 - v1.2 Started: Viewer & Indexing (图片查看器、标签增强、下载管理、索引优化)
 
-Last updated: 2026-05-12 after v1.2 milestone started
+Last updated: 2026-05-15 — Phase 10 (gallery-indexing) complete — IDX-01 through IDX-04 validated

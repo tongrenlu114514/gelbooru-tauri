@@ -46,6 +46,34 @@ const MIGRATIONS: &[(&str, &str)] = &[
     // Version 1: baseline — all 5 tables created by the original new() batch.
     // No SQL needed; version 1 is set as baseline for existing DBs.
     ("001_init", ""),
+    ("002_gallery_index", r#"
+        CREATE TABLE IF NOT EXISTS gallery_images (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_path TEXT NOT NULL UNIQUE,
+            file_name TEXT NOT NULL,
+            file_size INTEGER NOT NULL DEFAULT 0,
+            width INTEGER NOT NULL DEFAULT 0,
+            height INTEGER NOT NULL DEFAULT 0,
+            file_hash TEXT,
+            thumbnail_path TEXT,
+            last_scanned INTEGER NOT NULL,
+            created_at INTEGER NOT NULL DEFAULT (unixepoch())
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_gallery_images_path ON gallery_images(file_path);
+
+        CREATE TABLE IF NOT EXISTS thumbnails (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            image_id INTEGER NOT NULL,
+            width INTEGER NOT NULL,
+            height INTEGER NOT NULL,
+            thumbnail_path TEXT NOT NULL,
+            created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+            FOREIGN KEY (image_id) REFERENCES gallery_images(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_thumbnails_image_id ON thumbnails(image_id);
+    "#),
 ];
 
 /// Creates schema_version table if absent, sets baseline version=1 for existing DBs,
@@ -450,6 +478,98 @@ impl Database {
     pub fn delete_download_task(&self, id: i64) -> SqliteResult<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM downloads WHERE id = ?1", rusqlite::params![id])?;
+        Ok(())
+    }
+
+    // Gallery image index methods
+    pub fn upsert_gallery_image(
+        &self,
+        file_path: &str,
+        file_name: &str,
+        file_size: i64,
+        width: i64,
+        height: i64,
+        file_hash: Option<&str>,
+        thumbnail_path: Option<&str>,
+        last_scanned: i64,
+    ) -> SqliteResult<i64> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            r#"INSERT INTO gallery_images (file_path, file_name, file_size, width, height, file_hash, thumbnail_path, last_scanned)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+               ON CONFLICT(file_path) DO UPDATE SET
+                   file_name = excluded.file_name,
+                   file_size = excluded.file_size,
+                   width = excluded.width,
+                   height = excluded.height,
+                   file_hash = excluded.file_hash,
+                   thumbnail_path = excluded.thumbnail_path,
+                   last_scanned = excluded.last_scanned"#,
+            rusqlite::params![file_path, file_name, file_size, width, height, file_hash, thumbnail_path, last_scanned],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn get_gallery_image_by_path(&self, file_path: &str) -> SqliteResult<Option<(i64, i64, Option<String>)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, last_scanned, thumbnail_path FROM gallery_images WHERE file_path = ?1"
+        )?;
+        let result = stmt
+            .query_row(rusqlite::params![file_path], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .optional()?;
+        Ok(result)
+    }
+
+    pub fn get_indexed_images(&self, folder_path: &str, offset: usize, limit: usize) -> SqliteResult<(Vec<(i64, String, String, i64, i64, i64, Option<String>, i64)>, usize)> {
+        let conn = self.conn.lock().unwrap();
+        // Count total
+        let total: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM gallery_images WHERE file_path LIKE ?1",
+            rusqlite::params![format!("{}%", folder_path.replace('\\', "/"))],
+            |row| row.get(0),
+        )?;
+        // Fetch paginated
+        let mut stmt = conn.prepare(
+            "SELECT id, file_path, file_name, file_size, width, height, thumbnail_path, last_scanned
+             FROM gallery_images
+             WHERE file_path LIKE ?1
+             ORDER BY last_scanned DESC
+             LIMIT ?2 OFFSET ?3"
+        )?;
+        let rows = stmt.query_map(
+            rusqlite::params![format!("{}%", folder_path.replace('\\', "/")), limit, offset],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?, row.get(7)?)),
+        )?;
+        let images: Vec<_> = rows.filter_map(|r| r.ok()).collect();
+        Ok((images, total as usize))
+    }
+
+    pub fn save_thumbnail_entry(&self, image_id: i64, thumbnail_path: &str, width: i64, height: i64) -> SqliteResult<i64> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO thumbnails (image_id, thumbnail_path, width, height) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![image_id, thumbnail_path, width, height],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn get_thumbnail_entry(&self, image_id: i64, width: i64, height: i64) -> SqliteResult<Option<String>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT thumbnail_path FROM thumbnails WHERE image_id = ?1 AND width = ?2 AND height = ?3"
+        )?;
+        stmt.query_row(rusqlite::params![image_id, width, height], |row| row.get(0))
+            .optional()
+    }
+
+    pub fn update_gallery_thumbnail_path(&self, image_id: i64, thumbnail_path: &str) -> SqliteResult<()> {
+        self.conn.lock().unwrap().execute(
+            "UPDATE gallery_images SET thumbnail_path = ?1 WHERE id = ?2",
+            rusqlite::params![thumbnail_path, image_id],
+        )?;
         Ok(())
     }
 }

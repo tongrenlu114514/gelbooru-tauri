@@ -1,9 +1,9 @@
 use crate::commands::favorite_tags::DbState;
-use image::{imageops::FilterType, open, DynamicImage};
+use image::{imageops::FilterType, GenericImageView, open};
 use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 use tokio::sync::mpsc;
 
 // Re-export is_image from gallery.rs so thumbnail generation stays consistent
@@ -139,17 +139,29 @@ pub struct IndexingService {
 }
 
 impl IndexingService {
-    pub fn new(db: Arc<crate::db::Database>, app_handle: AppHandle) -> Self {
+    pub fn new(db: Arc<crate::db::Database>, _app_handle: AppHandle) -> Self {
         let (tx, mut rx) = mpsc::channel::<ThumbnailJob>(THUMBNAIL_QUEUE_SIZE);
+        let db_clone = Arc::clone(&db);
 
         tokio::spawn(async move {
             while let Some(job) = rx.recv().await {
+                // Clone all paths BEFORE spawn_blocking so they survive the await
+                let source = job.source_path.clone();
+                let dest = job.dest_path.clone();
+                let job_id = job.image_id;
+                let max_w = job.max_width;
+                let max_h = job.max_height;
+
+                // Clone again for use after the await (strings moved into closure)
+                let source_for_log = source.clone();
+                let dest_for_db = dest.clone();
+
                 let result = tokio::task::spawn_blocking(move || {
                     generate_thumbnail_impl(
-                        std::path::Path::new(&job.source_path),
-                        std::path::Path::new(&job.dest_path),
-                        job.max_width,
-                        job.max_height,
+                        std::path::Path::new(&source),
+                        std::path::Path::new(&dest),
+                        max_w,
+                        max_h,
                     )
                 })
                 .await;
@@ -157,18 +169,18 @@ impl IndexingService {
                 match result {
                     Ok(Ok((w, h))) => {
                         // Save thumbnail entry to DB
-                        if let Err(e) = db.save_thumbnail_entry(job.image_id, &job.dest_path, w as i64, h as i64) {
+                        if let Err(e) = db_clone.save_thumbnail_entry(job_id, &dest_for_db, w as i64, h as i64) {
                             eprintln!("[indexing] Failed to save thumbnail entry: {}", e);
                         }
                         // Update gallery_images.thumbnail_path with primary thumbnail (card size)
-                        if job.max_width == 320 && job.max_height == 320 {
-                            if let Err(e) = db.update_gallery_thumbnail_path(job.image_id, &job.dest_path) {
+                        if max_w == 320 && max_h == 320 {
+                            if let Err(e) = db_clone.update_gallery_thumbnail_path(job_id, &dest_for_db) {
                                 eprintln!("[indexing] Failed to update thumbnail_path: {}", e);
                             }
                         }
                     }
                     Ok(Err(e)) => {
-                        eprintln!("[indexing] Thumbnail generation failed for {}: {}", job.source_path, e);
+                        eprintln!("[indexing] Thumbnail generation failed for {}: {}", source_for_log, e);
                     }
                     Err(e) => {
                         eprintln!("[indexing] Task join error: {}", e);
@@ -198,7 +210,6 @@ pub async fn scan_gallery(
     app_handle: AppHandle,
     root_path: String,
 ) -> Result<ScanResult, String> {
-    use std::time::SystemTime;
     use std::time::UNIX_EPOCH;
 
     let root = PathBuf::from(&root_path);
@@ -248,7 +259,7 @@ pub async fn scan_gallery(
         // Check existing entry
         let existing = db_inner.get_gallery_image_by_path(&file_path).ok().flatten();
 
-        let (id, is_new) = if let Some((existing_id, existing_mtime, _)) = existing {
+        let (id, _is_new) = if let Some((existing_id, existing_mtime, _)) = existing {
             if existing_mtime < mtime {
                 // Updated — re-index
                 db_inner
@@ -284,33 +295,31 @@ pub async fn scan_gallery(
             (id, true)
         };
 
-        // Queue background thumbnail generation for new/updated images
+        // Queue background thumbnail generation for all images
         if let Some(indexing_svc) = app_handle.try_state::<IndexingService>() {
-            if is_new || updated_count > 0 {
-                // Queue card thumbnail (320x320)
-                if let Ok(thumb_path) =
-                    get_thumbnail_path_for_size(&app_handle, &file_path, ThumbnailSize::Card)
-                {
-                    indexing_svc.queue_thumbnail(ThumbnailJob {
-                        image_id: id,
-                        source_path: file_path.clone(),
-                        dest_path: thumb_path.to_string_lossy().to_string(),
-                        max_width: 320,
-                        max_height: 320,
-                    });
-                }
-                // Queue filmstrip thumbnail (60x72)
-                if let Ok(thumb_path) =
-                    get_thumbnail_path_for_size(&app_handle, &file_path, ThumbnailSize::Filmstrip)
-                {
-                    indexing_svc.queue_thumbnail(ThumbnailJob {
-                        image_id: id,
-                        source_path: file_path.clone(),
-                        dest_path: thumb_path.to_string_lossy().to_string(),
-                        max_width: 60,
-                        max_height: 72,
-                    });
-                }
+            // Queue card thumbnail (320x320)
+            if let Ok(thumb_path) =
+                get_thumbnail_path_for_size(&app_handle, &file_path, ThumbnailSize::Card)
+            {
+                indexing_svc.queue_thumbnail(ThumbnailJob {
+                    image_id: id,
+                    source_path: file_path.clone(),
+                    dest_path: thumb_path.to_string_lossy().to_string(),
+                    max_width: 320,
+                    max_height: 320,
+                });
+            }
+            // Queue filmstrip thumbnail (60x72)
+            if let Ok(thumb_path) =
+                get_thumbnail_path_for_size(&app_handle, &file_path, ThumbnailSize::Filmstrip)
+            {
+                indexing_svc.queue_thumbnail(ThumbnailJob {
+                    image_id: id,
+                    source_path: file_path.clone(),
+                    dest_path: thumb_path.to_string_lossy().to_string(),
+                    max_width: 60,
+                    max_height: 72,
+                });
             }
         }
     }
@@ -325,7 +334,6 @@ pub async fn scan_gallery(
 }
 
 /// Get indexed images for a folder, with pagination.
-/// Falls back to filesystem scan if DB is empty for this folder.
 #[tauri::command]
 pub async fn get_indexed_images(
     db: State<'_, DbState>,
@@ -412,10 +420,12 @@ pub async fn generate_thumbnail(
 
     // On-demand generate
     let dest_path = get_thumbnail_path_for_size(&app_handle, &image_path, size_key)?;
+    let dest_path_clone = dest_path.to_string_lossy().to_string();
+    let image_path_clone = image_path.clone();
     let result = tokio::task::spawn_blocking(move || {
         generate_thumbnail_impl(
-            std::path::Path::new(&image_path),
-            &dest_path,
+            std::path::Path::new(&image_path_clone),
+            std::path::Path::new(&dest_path_clone),
             max_w,
             max_h,
         )
@@ -427,8 +437,9 @@ pub async fn generate_thumbnail(
     // Save to DB
     let db_inner = db.0.lock().map_err(|e| e.to_string())?;
     if image_id > 0 {
-        let _ = db_inner.save_thumbnail_entry(image_id, dest_path.to_string_lossy().as_ref(), result.0 as i64, result.1 as i64);
-        let _ = db_inner.update_gallery_thumbnail_path(image_id, dest_path.to_string_lossy().as_ref());
+        let dest_str = dest_path.to_string_lossy();
+        let _ = db_inner.save_thumbnail_entry(image_id, dest_str.as_ref(), result.0 as i64, result.1 as i64);
+        let _ = db_inner.update_gallery_thumbnail_path(image_id, dest_str.as_ref());
     }
     drop(db_inner);
 
@@ -476,18 +487,7 @@ pub async fn start_background_thumbnail_scan(
     app_handle: AppHandle,
 ) -> Result<(), String> {
     let db_inner = db.0.lock().map_err(|e| e.to_string())?;
-
-    // Get all images without thumbnails
-    let conn = &db_inner.conn.lock().unwrap();
-    let mut stmt = conn
-        .prepare("SELECT id, file_path FROM gallery_images WHERE thumbnail_path IS NULL")
-        .map_err(|e| e.to_string())?;
-    let rows: Vec<(i64, String)> = stmt
-        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
-        .map_err(|e| e.to_string())?
-        .filter_map(|r| r.ok())
-        .collect();
-    drop(conn);
+    let rows = db_inner.get_images_without_thumbnails().map_err(|e| e.to_string())?;
     drop(db_inner);
 
     if let Some(indexing_svc) = app_handle.try_state::<IndexingService>() {
@@ -524,7 +524,6 @@ pub async fn start_background_thumbnail_scan(
 
 // ──────────────────────────────────────────────────────────────
 // App setup: register IndexingService on app startup
-// Called from main.rs during TauriBuilder setup
 // ──────────────────────────────────────────────────────────────
 
 /// Register the IndexingService with the Tauri app state.

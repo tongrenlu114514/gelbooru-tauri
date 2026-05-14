@@ -361,7 +361,7 @@ pub async fn get_local_image_base64(
 const MAX_CONCURRENT_DIRS: usize = 10;
 
 /// Returns true if the given path has an image extension (case-insensitive).
-fn is_image(path: &std::path::Path) -> bool {
+pub(crate) fn is_image(path: &std::path::Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
         .map(|e| ["jpg", "jpeg", "png", "gif", "webp"].contains(&e.to_lowercase().as_str()))

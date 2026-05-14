@@ -572,6 +572,19 @@ impl Database {
         )?;
         Ok(())
     }
+
+    pub fn get_images_without_thumbnails(&self) -> SqliteResult<Vec<(i64, String)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare("SELECT id, file_path FROM gallery_images WHERE thumbnail_path IS NULL")
+            .map_err(|e| e)?;
+        let rows: Vec<(i64, String)> = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .map_err(|e| e)?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
 }
 
 #[cfg(test)]

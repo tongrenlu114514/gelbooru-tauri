@@ -60,9 +60,9 @@
 | DL-01 | Phase 9 | Pending |
 | DL-02 | Phase 9 | Pending |
 | IDX-01 | Phase 10 | Pending |
-| IDX-02 | Phase 10 | Pending |
+| IDX-02 | Phase 11 | Pending |
 | IDX-03 | Phase 10 | Pending |
-| IDX-04 | Phase 10 | Pending |
+| IDX-04 | Phase 11 | Pending |
 
 **Coverage:**
 - v1.2 requirements: 14 total (6 UI + 2 TAG + 2 DL + 4 IDX)

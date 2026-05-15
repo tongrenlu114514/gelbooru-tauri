@@ -390,44 +390,42 @@ pub async fn generate_thumbnail(
     max_width: Option<u32>,
     max_height: Option<u32>,
 ) -> Result<String, String> {
-    let db_inner = db.0.lock().map_err(|e| e.to_string())?;
+    // Extract all data BEFORE dropping the lock — compiler needs this to verify
+    // no MutexGuard crosses the await boundary
+    let (image_id, dest_path, image_path_clone) = {
+        let db_inner = db.0.lock().map_err(|e| e.to_string())?;
+        let (id, _, existing_thumb) = db_inner
+            .get_gallery_image_by_path(&image_path)
+            .map_err(|e| e.to_string())?
+            .unwrap_or((0, 0i64, None));
 
-    // Get image ID
-    let (image_id, _, existing_thumb) = db_inner
-        .get_gallery_image_by_path(&image_path)
-        .map_err(|e| e.to_string())?
-        .unwrap_or((0, 0i64, None));
+        let max_w = max_width.unwrap_or(320);
+        let max_h = max_height.unwrap_or(320);
+        let size_key = if max_w == 320 && max_h == 320 {
+            ThumbnailSize::Card
+        } else {
+            ThumbnailSize::Filmstrip
+        };
 
-    // Determine size
-    let max_w = max_width.unwrap_or(320);
-    let max_h = max_height.unwrap_or(320);
+        if let Some(ref thumb_path) = existing_thumb {
+            let p = std::path::Path::new(thumb_path);
+            if p.exists() {
+                return Ok(thumb_path.clone());
+            }
+        }
 
-    // Check if already generated
-    let size_key = if max_w == 320 && max_h == 320 {
-        ThumbnailSize::Card
-    } else {
-        ThumbnailSize::Filmstrip
+        let dest_path = get_thumbnail_path_for_size(&app_handle, &image_path, size_key)?;
+        (id, dest_path, image_path.clone())
     };
 
-    if let Some(ref thumb_path) = existing_thumb {
-        let p = std::path::Path::new(thumb_path);
-        if p.exists() {
-            return Ok(thumb_path.clone());
-        }
-    }
-
-    drop(db_inner);
-
     // On-demand generate
-    let dest_path = get_thumbnail_path_for_size(&app_handle, &image_path, size_key)?;
-    let dest_path_clone = dest_path.to_string_lossy().to_string();
-    let image_path_clone = image_path.clone();
+    let dest_path_str = dest_path.to_string_lossy().to_string();
     let result = tokio::task::spawn_blocking(move || {
         generate_thumbnail_impl(
             std::path::Path::new(&image_path_clone),
-            std::path::Path::new(&dest_path_clone),
-            max_w,
-            max_h,
+            std::path::Path::new(&dest_path_str),
+            max_width.unwrap_or(320),
+            max_height.unwrap_or(320),
         )
     })
     .await
@@ -435,19 +433,19 @@ pub async fn generate_thumbnail(
     .map_err(|e| e.to_string())?;
 
     // Save to DB
-    let db_inner = db.0.lock().map_err(|e| e.to_string())?;
     if image_id > 0 {
+        let db_inner = db.0.lock().map_err(|e| e.to_string())?;
         let dest_str = dest_path.to_string_lossy();
         let _ = db_inner.save_thumbnail_entry(image_id, dest_str.as_ref(), result.0 as i64, result.1 as i64);
         let _ = db_inner.update_gallery_thumbnail_path(image_id, dest_str.as_ref());
     }
-    drop(db_inner);
 
     // Queue the other size for background pre-generation
     if let Some(indexing_svc) = app_handle.try_state::<IndexingService>() {
-        let other_size = match size_key {
-            ThumbnailSize::Card => ThumbnailSize::Filmstrip,
-            ThumbnailSize::Filmstrip => ThumbnailSize::Card,
+        let other_size = if max_width.unwrap_or(320) == 320 && max_height.unwrap_or(320) == 320 {
+            ThumbnailSize::Filmstrip
+        } else {
+            ThumbnailSize::Card
         };
         if let Ok(other_path) = get_thumbnail_path_for_size(&app_handle, &image_path, other_size) {
             indexing_svc.queue_thumbnail(ThumbnailJob {

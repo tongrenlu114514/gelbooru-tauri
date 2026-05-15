@@ -1,8 +1,8 @@
 use crate::db::{Database, FavoriteTag, FavoriteTagGroup};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::State;
 
-pub struct DbState(pub Mutex<Database>);
+pub struct DbState(pub Mutex<Arc<Database>>);
 
 #[tauri::command]
 pub fn get_favorite_tags(db: State<DbState>) -> Result<Vec<FavoriteTagGroup>, String> {

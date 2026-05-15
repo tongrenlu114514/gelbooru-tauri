@@ -17,7 +17,7 @@
 - [ ] **Phase 8: Tag Autocomplete** — Search tag autocomplete and recommendations (TAG-01, TAG-02)
 - [x] **Phase 9: Download Retry UI** — Retry button and pause/resume controls (DL-01, DL-02) (completed 2026-05-14)
 - [x] **Phase 10: Gallery Indexing** — SQLite index and thumbnail generation (IDX-01 to IDX-04) (completed 2026-05-14)
-- [ ] **Phase 11: Wire Indexing Backend** — Register IndexingService and Tauri commands (IDX-02, IDX-04) (gap closure)
+- [x] **Phase 11: Wire Indexing Backend** — Register IndexingService and Tauri commands (IDX-02, IDX-04) (gap closure) (completed 2026-05-15)
 
 ## Phase Details
 
@@ -89,7 +89,7 @@ Plans:
 4. Background mpsc channel created and functional
 **Plans**: 1 plan
 Plans:
-- [ ] 11-01-PLAN.md — Wire IndexingService + register Tauri commands in main.rs
+- [x] 11-01-PLAN.md — Wire IndexingService + register Tauri commands in main.rs
 
 ## Progress
 
@@ -105,4 +105,4 @@ Plans:
 | 8. Tag Autocomplete | v1.2 | 0/1 | Not started |
 | 9. Download Retry UI | 1/1 | Complete    | 2026-05-14 |
 | 10. Gallery Indexing | v1.2 | 1/1 | Complete    | 2026-05-14 |
-| 11. Wire Indexing Backend | v1.2 | 0/1 | Not started | — |
+| 11. Wire Indexing Backend | v1.2 | 1/1 | Complete    | 2026-05-15 |
